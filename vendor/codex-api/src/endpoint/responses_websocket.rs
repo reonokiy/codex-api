@@ -431,10 +431,29 @@ impl ResponsesWebsocketClient {
         extra_headers: HeaderMap,
         default_headers: HeaderMap,
     ) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
-        let url = self
+        self.connect_raw_with_query(http_client_factory, extra_headers, default_headers, None)
+            .await
+    }
+
+    /// Preserve caller query parameters, including duplicate keys and percent encoding.
+    pub async fn connect_raw_with_query(
+        &self,
+        http_client_factory: &HttpClientFactory,
+        extra_headers: HeaderMap,
+        default_headers: HeaderMap,
+        query: Option<&str>,
+    ) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
+        let mut url = self
             .provider
             .websocket_url_for_path(self.endpoint.path())
             .map_err(|err| ApiError::Stream(format!("failed to build websocket URL: {err}")))?;
+        if let Some(query) = query {
+            let query = match url.query() {
+                Some(existing) if !existing.is_empty() => format!("{existing}&{query}"),
+                _ => query.to_owned(),
+            };
+            url.set_query(Some(&query));
+        }
         let mut headers =
             merge_request_headers(&self.provider.headers, extra_headers, default_headers);
         self.auth.add_auth_headers(&mut headers);

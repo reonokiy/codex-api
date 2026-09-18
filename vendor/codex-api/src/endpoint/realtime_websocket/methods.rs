@@ -61,6 +61,8 @@ const OPENAI_REALTIME_API_BASE_URL: &str = "https://api.openai.com/v1";
 const MAX_ACTIVE_TRANSCRIPT_BYTES: usize = 8 * 1024;
 const TRUNCATED_TRANSCRIPT_PREFIX: &str = "…";
 
+pub type RealtimeRawWebsocketConnection = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
 struct WsStream {
     tx_command: mpsc::Sender<WsCommand>,
     pump_task: tokio::task::JoinHandle<()>,
@@ -791,6 +793,39 @@ impl RealtimeWebsocketClient {
         self
     }
 
+    /// Gateway entry point: retain the native handshake without initializing or parsing a session.
+    pub async fn connect_raw(
+        &self,
+        url: &str,
+        extra_headers: HeaderMap,
+        default_headers: HeaderMap,
+    ) -> Result<
+        (
+            RealtimeRawWebsocketConnection,
+            http::Response<Option<Vec<u8>>>,
+        ),
+        ApiError,
+    > {
+        let mut url = Url::parse(url)
+            .map_err(|err| ApiError::Stream(format!("invalid realtime URL: {err}")))?;
+        match url.scheme() {
+            "http" => {
+                let _ = url.set_scheme("ws");
+            }
+            "https" => {
+                let _ = url.set_scheme("wss");
+            }
+            "ws" | "wss" => {}
+            _ => {
+                return Err(ApiError::InvalidRequest {
+                    message: "unsupported realtime URL scheme".into(),
+                });
+            }
+        }
+        self.connect_raw_url(url, extra_headers, default_headers)
+            .await
+    }
+
     pub async fn connect(
         &self,
         config: RealtimeSessionConfig,
@@ -946,38 +981,23 @@ impl RealtimeWebsocketClient {
         session_initialization: RealtimeSessionInitialization,
         transcript_state: RealtimeTranscriptState,
     ) -> Result<RealtimeWebsocketConnection, ApiError> {
-        ensure_rustls_crypto_provider();
-
-        let mut request = ws_url
-            .as_str()
-            .into_client_request()
-            .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
-        let headers = merge_request_headers(
-            &self.provider.headers,
-            with_session_id_header(extra_headers, config.session_id.as_deref())?,
-            default_headers,
-        );
-        request.headers_mut().extend(headers);
-
-        info!("connecting realtime websocket: {ws_url}");
-        // Realtime websocket TLS should honor the same custom-CA env vars as the rest of Codex's
-        // outbound HTTPS and websocket traffic.
-        let connector = maybe_build_rustls_client_config_with_custom_ca()
-            .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?
-            .map(tokio_tungstenite::Connector::Rustls);
-        let (stream, response) = tokio_tungstenite::connect_async_tls_with_config(
-            request,
-            Some(websocket_config()),
-            false,
-            connector,
-        )
-        .await
-        .map_err(map_realtime_websocket_connect_error)?;
-        info!(
-            ws_url = %ws_url,
-            status = %response.status(),
-            "realtime websocket connected"
-        );
+        let (stream, _) = self
+            .connect_raw_url(
+                ws_url,
+                with_session_id_header(extra_headers, config.session_id.as_deref())?,
+                default_headers,
+            )
+            .await
+            .map_err(|error| match error {
+                // Preserve the original typed client's handshake-error contract.
+                ApiError::Transport(codex_client::TransportError::Http { status, .. }) => {
+                    ApiError::Api {
+                        status,
+                        message: "realtime websocket handshake failed".to_string(),
+                    }
+                }
+                error => error,
+            })?;
 
         let (stream, rx_message) = WsStream::new(stream);
         let connection = RealtimeWebsocketConnection::new(
@@ -1018,6 +1038,61 @@ impl RealtimeWebsocketClient {
             connection.events.wait_for_session_started().await?;
         }
         Ok(connection)
+    }
+
+    async fn connect_raw_url(
+        &self,
+        ws_url: Url,
+        extra_headers: HeaderMap,
+        default_headers: HeaderMap,
+    ) -> Result<
+        (
+            RealtimeRawWebsocketConnection,
+            http::Response<Option<Vec<u8>>>,
+        ),
+        ApiError,
+    > {
+        ensure_rustls_crypto_provider();
+
+        let mut request = ws_url
+            .as_str()
+            .into_client_request()
+            .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
+        let headers = merge_request_headers(&self.provider.headers, extra_headers, default_headers);
+        request.headers_mut().extend(headers);
+
+        info!("connecting realtime websocket: {ws_url}");
+        // Realtime websocket TLS should honor the same custom-CA env vars as the rest of Codex's
+        // outbound HTTPS and websocket traffic.
+        let connector = maybe_build_rustls_client_config_with_custom_ca()
+            .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?
+            .map(tokio_tungstenite::Connector::Rustls);
+        let (stream, response) = tokio_tungstenite::connect_async_tls_with_config(
+            request,
+            Some(websocket_config()),
+            false,
+            connector,
+        )
+        .await
+        .map_err(|error| match error {
+            WsError::Http(response) => ApiError::Transport(codex_client::TransportError::Http {
+                status: response.status(),
+                url: Some(ws_url.to_string()),
+                headers: Some(response.headers().clone()),
+                body: response
+                    .body()
+                    .as_ref()
+                    .and_then(|body| String::from_utf8(body.clone()).ok()),
+            }),
+            error => map_realtime_websocket_connect_error(error),
+        })?;
+        info!(
+            ws_url = %ws_url,
+            status = %response.status(),
+            "realtime websocket connected"
+        );
+
+        Ok((stream, response))
     }
 }
 

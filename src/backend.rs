@@ -18,6 +18,8 @@ pub struct Backend {
     pub auth: Arc<AuthManager>,
     pub factory: HttpClientFactory,
     pub chatgpt_base_url: String,
+    pub platform_base_url: String,
+    pub auth_base_url: String,
     pub subscription_only: bool,
     pub compression: bool,
     pub agent_identity_policy: codex_login::AgentIdentityAuthPolicy,
@@ -57,6 +59,16 @@ impl Backend {
         &self,
         headers: http::HeaderMap,
     ) -> Result<(codex_websocket_client::WebSocketConnection, http::HeaderMap), GatewayError> {
+        self.connect_websocket_endpoint(headers, codex_api::ResponsesEndpoint::Responses, None)
+            .await
+    }
+
+    pub async fn connect_websocket_endpoint(
+        &self,
+        headers: http::HeaderMap,
+        endpoint: codex_api::ResponsesEndpoint,
+        query: Option<&str>,
+    ) -> Result<(codex_websocket_client::WebSocketConnection, http::HeaderMap), GatewayError> {
         let mut recovery = self.auth.unauthorized_recovery();
         let original = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
         let account = (original.get_account_id(), original.get_chatgpt_user_id());
@@ -88,12 +100,14 @@ impl Backend {
             if *changes.borrow() != revision {
                 continue;
             }
-            let client = codex_api::ResponsesWebsocketClient::new(resolved, api_auth);
+            let client = codex_api::ResponsesWebsocketClient::new(resolved, api_auth)
+                .with_endpoint(endpoint);
             match client
-                .connect_raw(
+                .connect_raw_with_query(
                     &self.factory,
                     headers.clone(),
                     codex_login::default_client::default_headers(),
+                    query,
                 )
                 .await
             {
@@ -234,6 +248,12 @@ impl Backend {
                 ToolRequest::Search(request) => {
                     codex_api::SearchClient::new(transport, provider, api_auth)
                         .search(request, headers.clone())
+                        .await
+                        .map(|_| ())
+                }
+                ToolRequest::Memory(request) => {
+                    codex_api::MemoriesClient::new(transport, provider, api_auth)
+                        .summarize(request.clone(), headers.clone())
                         .await
                         .map(|_| ())
                 }

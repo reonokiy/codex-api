@@ -101,6 +101,62 @@ pub struct StandaloneTransport {
     pub inner: codex_api::ReqwestTransport,
     pub response: std::sync::Arc<std::sync::OnceLock<(http::HeaderMap, Bytes)>>,
 }
+
+/// Preserve error bodies and redirects which ReqwestTransport converts to UTF-8 errors.
+/// Request body preparation, HTTP, TLS and proxy routing still use the original client.
+pub struct ProxyTransport {
+    pub http: codex_http_client::HttpClient,
+    pub failed: std::sync::Arc<std::sync::Mutex<Option<Response>>>,
+}
+impl HttpTransport for ProxyTransport {
+    async fn execute(&self, request: Request) -> Result<Response, TransportError> {
+        collect_response(self.stream(request).await?, MAX_RESPONSE_BYTES).await
+    }
+    async fn stream(&self, request: Request) -> Result<StreamResponse, TransportError> {
+        let prepared = request
+            .prepare_body_for_send()
+            .map_err(TransportError::Build)?;
+        let mut outgoing = self
+            .http
+            .request(request.method, &request.url)
+            .headers(prepared.headers);
+        if let Some(timeout) = request.timeout {
+            outgoing = outgoing.timeout(timeout);
+        }
+        if let Some(body) = prepared.body {
+            outgoing = outgoing.body(body);
+        }
+        let response = outgoing
+            .send()
+            .await
+            .map_err(|e| TransportError::Network(e.without_url().to_string()))?;
+        let response = StreamResponse {
+            status: response.status(),
+            headers: response.headers().clone(),
+            bytes: Box::pin(
+                response
+                    .bytes_stream()
+                    .map(|r| r.map_err(|e| TransportError::Network(e.without_url().to_string()))),
+            ),
+        };
+        if !response.status.is_success() {
+            let response = collect_response(response, MAX_RESPONSE_BYTES).await?;
+            let error = TransportError::Http {
+                status: response.status,
+                url: None,
+                headers: Some(response.headers.clone()),
+                body: std::str::from_utf8(&response.body).ok().map(str::to_owned),
+            };
+            *self
+                .failed
+                .lock()
+                .map_err(|_| TransportError::Network("response capture failed".into()))? =
+                Some(response);
+            return Err(error);
+        }
+        Ok(response)
+    }
+}
 impl HttpTransport for StandaloneTransport {
     async fn execute(&self, request: Request) -> Result<Response, TransportError> {
         let response =
@@ -115,7 +171,7 @@ impl HttpTransport for StandaloneTransport {
     }
 }
 
-async fn collect_response(
+pub(crate) async fn collect_response(
     mut response: StreamResponse,
     limit: usize,
 ) -> Result<Response, TransportError> {

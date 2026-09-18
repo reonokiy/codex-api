@@ -1,0 +1,1230 @@
+{
+  "date": "2026-09-18",
+  "codex_release": "0.155.0",
+  "commit": "f0a1b8f0849d90960bc406b848f32e5a129b0457",
+  "scope": "First-party network API families used by the fixed source, compared with currently documented OpenAI Platform APIs. Family-level semantic decisions are inferences from the cited source contracts, not claims of backend feature availability.",
+  "evidence": {
+    "native_inventory": "api-inventory.json",
+    "official_endpoint_snapshot": "openai-official-endpoint-paths.json",
+    "official_endpoint_snapshot_tool": "mcp__openaiDeveloperDocs__list_api_endpoints, OpenAI API v1, fetched 2026-09-18",
+    "retrieval": "Searched OpenAI Docs, fetched matched guides; used official OpenAPI endpoint specs and official HTML references where generated Markdown contained only a placeholder.",
+    "important_documentation_mismatch": "The generated Skills Create reference/spec labels files as JSON strings, while the dedicated Skills guide explicitly demonstrates multipart files[] and ZIP upload. Use the guide and actual SDK wire tests for upload compatibility; do not implement literal filesystem path strings from generated placeholder examples."
+  },
+  "classification": {
+    "direct_or_thin_adapter": "Same observable operation; route/transport or request/result adaptation is justified.",
+    "partial_counterpart": "Same narrow operation exists, but advertised capabilities exceed the source and must not be fabricated.",
+    "related_distinct_resource": "Public API exists in an adjacent area, but native resource identity, execution semantics or lifecycle differ. Not an interchangeable alias.",
+    "no_documented_counterpart": "No matching method/resource in the fetched public API index; native route remains appropriate.",
+    "new_workflow_not_native_proxy": "Public API exists but the fixed Codex source never calls an equivalent HTTP endpoint; exposing it requires a new workflow."
+  },
+  "families": [
+    {
+      "family": "Responses inference",
+      "native_entries": [
+        "responses"
+      ],
+      "native_paths": [
+        "/backend-api/codex/responses"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+          "line": 42
+        }
+      ],
+      "classification": "direct_or_thin_adapter",
+      "corresponding_public_api": [
+        "POST /v1/responses",
+        "GET /v1/responses (WebSocket)"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Native Codex uses streaming Responses requests plus Codex-specific model instructions, tools and Responses Lite items. Public requests may be non-streaming and terminal outputs must be complete."
+      ],
+      "required_adapter_actions": [
+        "Keep native HTTP/WS protocol intact; adapt supported public input via original serializers and aggregate terminal output; implement or explicitly reject unsupported fields instead of dropping them."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Guardian inference",
+      "native_entries": [
+        "guardian",
+        "guardian-classifier"
+      ],
+      "native_paths": [
+        "/backend-api/codex/guardian",
+        "/backend-api/codex/guardian-classifier"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+          "line": 43
+        },
+        {
+          "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+          "line": 44
+        }
+      ],
+      "classification": "no_documented_counterpart",
+      "corresponding_public_api": null,
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Dedicated Codex authorization-review/classification routes use Responses wire shapes; the public Responses API is not a named Guardian service."
+      ],
+      "required_adapter_actions": [
+        "Proxy native routes with original auth and protocol; do not alias to Moderations, which is a different classification task."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Models",
+      "native_entries": [
+        "models"
+      ],
+      "native_paths": [
+        "/backend-api/codex/models"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/models.rs",
+          "line": 31
+        }
+      ],
+      "classification": "direct_or_thin_adapter",
+      "corresponding_public_api": [
+        "GET /v1/models",
+        "GET /v1/models/{model}"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Native catalog carries Codex capabilities and instructions under models[]. Public Model objects use id/object/created/owned_by."
+      ],
+      "required_adapter_actions": [
+        "Map supported catalog entries to public Model objects; native endpoint retains all metadata and ETag. Preserve uncertainty about account availability."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Images",
+      "native_entries": [
+        "image-generations",
+        "image-edits"
+      ],
+      "native_paths": [
+        "/backend-api/codex/images/generations",
+        "/backend-api/codex/images/edits"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/images.rs",
+          "line": 41
+        },
+        {
+          "path": "codex-rs/codex-api/src/endpoint/images.rs",
+          "line": 54
+        }
+      ],
+      "classification": "partial_counterpart",
+      "corresponding_public_api": [
+        "POST /v1/images/generations",
+        "POST /v1/images/edits"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Generation fields substantially overlap. Codex edit uses JSON image URLs while public SDK sends multipart files. The source request types do not expose masks, output compression, format choice or streamed image events."
+      ],
+      "required_adapter_actions": [
+        "Reuse ImagesClient; convert multipart uploads to native image URLs in memory; preserve full raw responses. Only accept options that can be fulfilled. A /v1 route alone does not provide the Responses hosted image_generation tool."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Search and web commands",
+      "native_entries": [
+        "search"
+      ],
+      "native_paths": [
+        "/backend-api/codex/alpha/search"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/search.rs",
+          "line": 32
+        }
+      ],
+      "classification": "partial_counterpart",
+      "corresponding_public_api": [
+        "POST /v1/responses with tools[].type=web_search"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Codex alpha/search is direct command execution with reference/session state. Public web search is a hosted Responses tool chosen by a model, not a standalone REST search endpoint."
+      ],
+      "required_adapter_actions": [
+        "Expose alpha/search natively and supported hosted web_search through Responses. Do not invent /v1/web/search as an official path. Preserve sources, citations and search-call events."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Memory summarization",
+      "native_entries": [
+        "memory-trace-summarize"
+      ],
+      "native_paths": [
+        "/backend-api/codex/memories/trace_summarize"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/memories.rs",
+          "line": 33
+        }
+      ],
+      "classification": "no_documented_counterpart",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/conversations",
+        "POST /v1/responses/compact"
+      ],
+      "shape_and_semantic_differences": [
+        "Codex trace summarization emits memory artifacts. Public conversations store interaction items; compaction transforms context for a response. Neither is a trace-memory extraction service."
+      ],
+      "required_adapter_actions": [
+        "Retain native memories/trace_summarize; do not silently substitute Responses compact or Conversations."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "History and notes",
+      "native_entries": [
+        "history-list_windows",
+        "history-list_items",
+        "history-read_item",
+        "history-search_contents",
+        "notes-list_files_by_prefix",
+        "notes-read_file",
+        "notes-search_contents",
+        "notes-append_to_file",
+        "notes-write_file",
+        "notes-thread-hint"
+      ],
+      "native_paths": [
+        "/backend-api/codex/alpha/history/v2/list_windows",
+        "/backend-api/codex/alpha/history/v2/list_items",
+        "/backend-api/codex/alpha/history/v2/read_item",
+        "/backend-api/codex/alpha/history/v2/search_contents",
+        "/backend-api/codex/alpha/notes/v2/list_files_by_prefix",
+        "/backend-api/codex/alpha/notes/v2/read_file",
+        "/backend-api/codex/alpha/notes/v2/search_contents",
+        "/backend-api/codex/alpha/notes/v2/append_to_file",
+        "/backend-api/codex/alpha/notes/v2/write_file",
+        "/backend-api/codex/alpha/notes/v2/thread_hint"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 86
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 87
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 88
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 89
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 90
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 91
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 92
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 93
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 94
+        },
+        {
+          "path": "codex-rs/ext/history-notes/src/extension.rs",
+          "line": 122
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/conversations",
+        "GET /v1/conversations/{conversation_id}/items"
+      ],
+      "shape_and_semantic_differences": [
+        "Native history uses context.session_id and current_agent_name, history windows and item search; notes are mutable named files. Public Conversations expose conversation items, not window indexes or per-agent note files."
+      ],
+      "required_adapter_actions": [
+        "Proxy original alpha/history/v2 and alpha/notes/v2 methods. A public Conversations facade would need an independent resource/state model and cannot be an endpoint rename."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Realtime WebRTC call creation",
+      "native_entries": [
+        "realtime-calls"
+      ],
+      "native_paths": [
+        "/backend-api/codex/realtime/calls"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_call.rs",
+          "line": 63
+        }
+      ],
+      "classification": "direct_or_thin_adapter",
+      "corresponding_public_api": [
+        "POST /v1/realtime/calls"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Native subscription create-with-session sends JSON {sdp,session}; public call creation sends multipart sdp + JSON session. Sessionless source calls send raw application/sdp. Public success is 201 application/sdp with Location containing call ID. Codex V1/FramelessBidi add intent=quicksilver&architecture=avas."
+      ],
+      "required_adapter_actions": [
+        "Adapt multipart to original native JSON session request, preserving supported session fields and query metadata; relay SDP and rewrite same-service Location to gateway follow-up route if necessary. Verify session compatibility: AVAS source helper rejects RealtimeV2 rather than transparently translating it."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/realtime",
+        "https://developers.openai.com/api/docs/guides/voice-webrtc?api=realtime"
+      ]
+    },
+    {
+      "family": "Realtime WebSocket and transcription",
+      "native_entries": [
+        "realtime"
+      ],
+      "native_paths": [
+        "/v1/realtime"
+      ],
+      "native_auth": [
+        "api_key_or_existing_call_subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_websocket/methods.rs",
+          "line": 1077
+        },
+        {
+          "path": "codex-rs/core/src/realtime_conversation.rs",
+          "line": 1246
+        },
+        {
+          "path": "codex-rs/core/src/realtime_conversation.rs",
+          "line": 1773
+        },
+        {
+          "path": "codex-rs/core/src/client.rs",
+          "line": 412
+        }
+      ],
+      "classification": "direct_or_thin_adapter",
+      "corresponding_public_api": [
+        "GET /v1/realtime (WebSocket)"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Both support session events and raw audio messages; exact event versions differ (Codex V1, RealtimeV2 and FramelessBidi). Codex RealtimeV2 transcription uses session.type=transcription and gpt-4o-mini-transcribe with 24 kHz PCM."
+      ],
+      "required_adapter_actions": [
+        "Relay handshake/query/frames through original WebSocket client; preserve model selection and event version. Do not apply Responses schema to Realtime frames. Test direct and call_id sideband connections.",
+        "Direct new WebSocket sessions require API key auth in the original source; existing-call sidebands permit the ChatGPT bearer plus account ID used at WebRTC creation. Do not claim new direct subscription sessions work without upstream verification."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/voice-websockets?api=realtime",
+        "https://developers.openai.com/api/docs/guides/realtime-transcription"
+      ]
+    },
+    {
+      "family": "Frameless Live transport",
+      "native_entries": [
+        "realtime-live",
+        "realtime-live-call"
+      ],
+      "native_paths": [
+        "/v1/live",
+        "/v1/live/{call_id}"
+      ],
+      "native_auth": [
+        "provider"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_call.rs",
+          "line": 72
+        },
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_websocket/methods.rs",
+          "line": 1129
+        }
+      ],
+      "classification": "partial_counterpart",
+      "corresponding_public_api": [
+        "POST /v1/live/sessions",
+        "GET /v1/live/sessions (WebSocket)",
+        "GET /v1/live/sessions/{session_id}/attach (WebSocket)"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Pinned public-side source uses /v1/live and /v1/live/{call_id}; current official Live uses /v1/live/sessions, JSON {session,transport:{type:webrtc,sdp}} and JSON {session:{id},transport:{type:webrtc,sdp}} response. Native subscription path still uses codex/realtime/calls and its internal query selection. Live session protocol is not interchangeable with Realtime V2."
+      ],
+      "required_adapter_actions": [
+        "Keep pinned native and legacy routes. A current Live facade needs explicit request/result/path adaptation and event-version parity tests; do not rename /live to /realtime or claim raw relay is current Live compatibility."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/voice-websockets?api=realtime",
+        "https://developers.openai.com/api/docs/guides/voice-webrtc?api=realtime",
+        "https://developers.openai.com/api/docs/guides/voice-sip?api=realtime"
+      ]
+    },
+    {
+      "family": "File upload and content",
+      "native_entries": [
+        "file-create",
+        "file-upload-complete",
+        "file-blob-upload"
+      ],
+      "native_paths": [
+        "/backend-api/files",
+        "/backend-api/files/{file_id}/uploaded",
+        "{upload_url}"
+      ],
+      "native_auth": [
+        "subscription",
+        "signed_url"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/files.rs",
+          "line": 138
+        },
+        {
+          "path": "codex-rs/codex-api/src/files.rs",
+          "line": 256
+        },
+        {
+          "path": "codex-rs/codex-api/src/files.rs",
+          "line": 186
+        }
+      ],
+      "classification": "partial_counterpart",
+      "corresponding_public_api": [
+        "POST /v1/files",
+        "GET /v1/files/{file_id}/content"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Native upload is JSON reservation {file_name,file_size,use_case:codex}, signed blob PUT, then uploaded finalization returning download URL and metadata. Public upload is multipart file + purpose with FileObject result. Native files belong to ChatGPT/Codex storage, not Platform Files project namespace. No source list/delete/metadata-fetch contract was found."
+      ],
+      "required_adapter_actions": [
+        "Use original upload_openai_file for a supported upload facade, return truthful id/name/size/purpose and capture creation time if needed; initially only map purpose=user_data when suitable. Download content must resolve a trusted native URL, not forward subscription credentials to signed storage. Reject Platform-only purposes and expiry policies unless actually implemented. Do not synthesize list/delete support or claim uploaded IDs are usable by unrelated Platform services."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference/resources/files/methods/create"
+      ]
+    },
+    {
+      "family": "Connector directory and app metadata",
+      "native_entries": [
+        "connectors-directory",
+        "connectors-workspace-directory",
+        "apps-batch"
+      ],
+      "native_paths": [
+        "/backend-api/connectors/directory/list",
+        "/backend-api/connectors/directory/list_workspace",
+        "/backend-api/ps/apps/batch"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/connectors/src/lib.rs",
+          "line": 272
+        },
+        {
+          "path": "codex-rs/connectors/src/lib.rs",
+          "line": 191
+        },
+        {
+          "path": "codex-rs/chatgpt/src/connectors.rs",
+          "line": 173
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/responses with tools[].type=mcp"
+      ],
+      "shape_and_semantic_differences": [
+        "Native routes list installed/available ChatGPT apps and fetch their policy metadata. Official remote MCP is a tool definition inside Responses; legacy connector IDs identify public-model integrations, not this directory resource."
+      ],
+      "required_adapter_actions": [
+        "Expose native metadata routes. Do not publish fictitious /v1/connectors CRUD. Preserve account-specific app metadata and native pagination."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+      ]
+    },
+    {
+      "family": "Apps MCP execution",
+      "native_entries": [
+        "apps-mcp"
+      ],
+      "native_paths": [
+        "/backend-api/ps/mcp"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/codex-mcp/src/mcp/mod.rs",
+          "line": 592
+        }
+      ],
+      "classification": "partial_counterpart",
+      "corresponding_public_api": [
+        "POST /v1/responses with tools[].type=mcp"
+      ],
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Native /ps/mcp is an MCP Streamable HTTP server with initialize, tools/list, tools/call and resources operations. Public Responses MCP is hosted tool discovery/execution with mcp_list_tools, mcp_call and approval items. Protocol-level methods have no separate OpenAI /v1/mcp REST counterpart."
+      ],
+      "required_adapter_actions": [
+        "Proxy native MCP JSON-RPC including MCP session headers, SSE and DELETE. Supporting public hosted MCP semantics additionally needs model tool discovery/execution and approvals orchestration; a function-call alias is insufficient. A gateway can itself be configured as a remote MCP server using a trusted caller token without inventing a public management API."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/tools-connectors-mcp"
+      ]
+    },
+    {
+      "family": "Plugin skill content",
+      "native_entries": [
+        "plugin-skill-read"
+      ],
+      "native_paths": [
+        "/backend-api/ps/plugins/{plugin_id}/skills/{skill_name}"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2275
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/skills",
+        "GET /v1/skills/{skill_id}",
+        "GET /v1/skills/{skill_id}/content",
+        "POST /v1/skills/{skill_id}/versions"
+      ],
+      "shape_and_semantic_differences": [
+        "Native route returns name and skill_md_contents for a skill within a marketplace plugin release. Public Skills are separately created project-owned versioned bundles with independent IDs, default_version and latest_version."
+      ],
+      "required_adapter_actions": [
+        "Proxy native plugin skill read. Do not fabricate public Skill IDs or version metadata from plugin names. Public skill upload/content support would require a real resource adapter beyond this read operation."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/tools-skills",
+        "https://developers.openai.com/api/reference/resources/skills/methods/create"
+      ]
+    },
+    {
+      "family": "Plugin marketplace, installation and sharing",
+      "native_entries": [
+        "plugins-suggested",
+        "plugins-list",
+        "plugins-shared",
+        "plugins-installed",
+        "plugin-read",
+        "plugin-install",
+        "plugin-uninstall",
+        "plugins-search",
+        "plugins-created",
+        "plugin-share-targets",
+        "plugin-upload-url",
+        "plugin-share-create",
+        "plugin-share-update",
+        "plugin-share-delete",
+        "plugins-featured-legacy",
+        "plugin-enable-legacy",
+        "plugin-uninstall-legacy",
+        "plugins-curated-export",
+        "plugin-bundle-download",
+        "plugin-blob-upload"
+      ],
+      "native_paths": [
+        "/backend-api/ps/plugins/suggested/codex",
+        "/backend-api/ps/plugins/list",
+        "/backend-api/ps/plugins/workspace/shared",
+        "/backend-api/ps/plugins/installed",
+        "/backend-api/ps/plugins/{plugin_id}",
+        "/backend-api/ps/plugins/{plugin_id}/install",
+        "/backend-api/ps/plugins/{plugin_id}/uninstall",
+        "/backend-api/ps/plugins/search",
+        "/backend-api/ps/plugins/workspace/created",
+        "/backend-api/ps/plugins/{plugin_id}/shares",
+        "/backend-api/public/plugins/workspace/upload-url",
+        "/backend-api/public/plugins/workspace",
+        "/backend-api/public/plugins/workspace/{plugin_id}",
+        "/backend-api/plugins/featured",
+        "/backend-api/plugins/{plugin_id}/enable",
+        "/backend-api/plugins/{plugin_id}/uninstall",
+        "/backend-api/plugins/export/curated",
+        "{bundle_download_url}",
+        "{upload_url}"
+      ],
+      "native_auth": [
+        "subscription",
+        "optional_subscription",
+        "none",
+        "signed_url"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 1021
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2173
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2195
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2215
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2263
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 1594
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 1691
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/search.rs",
+          "line": 44
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 385
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 320
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 405
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 457
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 287
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 288
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote_legacy.rs",
+          "line": 129
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote_legacy.rs",
+          "line": 194
+        },
+        {
+          "path": "codex-rs/core-plugins/src/startup_sync.rs",
+          "line": 27
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote_bundle.rs",
+          "line": 307
+        },
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 423
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/agents/sessions with environment.plugins",
+        "POST /v1/agents/environments/templates"
+      ],
+      "shape_and_semantic_differences": [
+        "Native plugin service manages marketplace recommendations, install state, workspace share targets and gzip bundles. Public Agents accepts inline ZIP plugin bundles as environment configuration, without public marketplace/share/install CRUD."
+      ],
+      "required_adapter_actions": [
+        "Proxy native marketplace/share/bundle transport and preserve signed URL behavior. Do not equate workspace plugin sharing with public Skills uploads or an Agents session creation call."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/agents-api/tools/plugins",
+        "https://developers.openai.com/api/docs/guides/agents-api/environments/openai-hosted"
+      ]
+    },
+    {
+      "family": "Cloud coding tasks and environments",
+      "native_entries": [
+        "tasks-list",
+        "task-create",
+        "task-read",
+        "task-sibling-turns",
+        "environments-list",
+        "environments-by-repo"
+      ],
+      "native_paths": [
+        "/backend-api/wham/tasks/list",
+        "/backend-api/wham/tasks",
+        "/backend-api/wham/tasks/{task_id}",
+        "/backend-api/wham/tasks/{task_id}/turns/{turn_id}/sibling_turns",
+        "/backend-api/wham/environments",
+        "/backend-api/wham/environments/by-repo/{provider}/{owner}/{repo}"
+      ],
+      "native_auth": [
+        "subscription"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 401
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 520
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 437
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 456
+        },
+        {
+          "path": "codex-rs/cloud-tasks/src/env_detect.rs",
+          "line": 90
+        },
+        {
+          "path": "codex-rs/cloud-tasks/src/env_detect.rs",
+          "line": 57
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/agents/sessions",
+        "GET /v1/agents/sessions/{session_id}",
+        "GET /v1/agents/environments/{environment_id}",
+        "POST /v1/agents/environments/templates"
+      ],
+      "shape_and_semantic_differences": [
+        "Codex tasks are repository/environment-bound coding jobs with sibling attempts, diffs and PR-oriented output. Public Agents sessions hold generic agent configuration, tools, required actions, events, artifacts and hosted/self-hosted runtime environments; templates save setup, not an existing Codex cloud repository environment."
+      ],
+      "required_adapter_actions": [
+        "Proxy native tasks/environment operations. Do not map task IDs to public session IDs or environment rows to templates without implementing the differing lifecycle. A full Agents compatibility facade is an orchestration project, not a thin native API adapter."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/agents-api/configuration",
+        "https://developers.openai.com/api/docs/guides/agents-api/sessions/manage",
+        "https://developers.openai.com/api/docs/guides/agents-api/environments/openai-hosted"
+      ]
+    },
+    {
+      "family": "Account, quota, usage, credits and client settings",
+      "native_entries": [
+        "accounts-check",
+        "profiles-me",
+        "accounts-credit-nudge",
+        "config-bundle",
+        "user-settings",
+        "workspace-messages",
+        "usage",
+        "reset-credits-list",
+        "reset-credit-consume",
+        "thread-estimates",
+        "thread-usage",
+        "api-key-turn-costs"
+      ],
+      "native_paths": [
+        "/backend-api/wham/accounts/check",
+        "/backend-api/wham/profiles/me",
+        "/backend-api/wham/accounts/send_add_credits_nudge_email",
+        "/backend-api/wham/config/bundle",
+        "/backend-api/wham/settings/user",
+        "/backend-api/wham/workspace-messages",
+        "/backend-api/wham/usage",
+        "/backend-api/wham/rate-limit-reset-credits",
+        "/backend-api/wham/rate-limit-reset-credits/consume",
+        "/backend-api/wham/usage/thread-estimates/query",
+        "/backend-api/wham/usage/thread_usage/query",
+        "/v1/analytics/codex/turn-costs"
+      ],
+      "native_auth": [
+        "subscription",
+        "api_key"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 344
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 361
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 657
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 474
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 674
+        },
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 667
+        },
+        {
+          "path": "codex-rs/backend-client/src/client/rate_limit_resets.rs",
+          "line": 127
+        },
+        {
+          "path": "codex-rs/backend-client/src/client/rate_limit_resets.rs",
+          "line": 137
+        },
+        {
+          "path": "codex-rs/backend-client/src/client/rate_limit_resets.rs",
+          "line": 151
+        },
+        {
+          "path": "codex-rs/backend-client/src/client/chatgpt_turn_cost.rs",
+          "line": 55
+        },
+        {
+          "path": "codex-rs/backend-client/src/client/thread_usage.rs",
+          "line": 80
+        },
+        {
+          "path": "codex-rs/backend-client/src/client/turn_usage.rs",
+          "line": 62
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "GET /v1/organization/usage/completions",
+        "GET /v1/organization/costs",
+        "GET /v1/organization/projects/{project_id}/rate_limits"
+      ],
+      "shape_and_semantic_differences": [
+        "Native usage is ChatGPT subscription limits, remaining credit/reset entitlements and per-thread/turn estimates. Public organization Usage/Costs are time-bucketed Platform project billing; public project rate limits are administratively configured request/token ceilings. Identities and accounting units differ."
+      ],
+      "required_adapter_actions": [
+        "Expose native usage/credit/settings routes; never convert remaining subscription quota into Platform spend or fabricated historical token buckets. Keep mutation methods distinct and preserve caller intent. No public credit-reset redemption or Codex account-check counterpart was documented."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/cookbook/examples/completions_usage_api",
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Remote control and agent identity discovery",
+      "native_entries": [
+        "remote-enroll",
+        "remote-refresh",
+        "remote-pair",
+        "remote-pair-status",
+        "remote-server",
+        "remote-clients-list",
+        "remote-client-revoke",
+        "agent-jwks"
+      ],
+      "native_paths": [
+        "/backend-api/wham/remote/control/server/enroll",
+        "/backend-api/wham/remote/control/server/refresh",
+        "/backend-api/wham/remote/control/server/pair",
+        "/backend-api/wham/remote/control/server/pair/status",
+        "/backend-api/wham/remote/control/server",
+        "/backend-api/wham/remote/control/environments/{environment_id}/clients",
+        "/backend-api/wham/remote/control/environments/{environment_id}/clients/{client_id}",
+        "/backend-api/wham/agent-identities/jwks"
+      ],
+      "native_auth": [
+        "subscription",
+        "remote_control_token",
+        "none"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/protocol.rs",
+          "line": 224
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/protocol.rs",
+          "line": 227
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/enroll.rs",
+          "line": 66
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/enroll.rs",
+          "line": 169
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/protocol.rs",
+          "line": 236
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/clients.rs",
+          "line": 258
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/clients.rs",
+          "line": 211
+        },
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 486
+        }
+      ],
+      "classification": "related_distinct_resource",
+      "corresponding_public_api": null,
+      "related_public_api": [
+        "POST /v1/agents/sessions with environment.type=self_hosted"
+      ],
+      "shape_and_semantic_differences": [
+        "Codex enroll/pair/revoke and multiplexed app-server tunnel manage the user\u2019s remote machine. Public Agents self-hosted environments use a different session executor connection lifecycle and credentials."
+      ],
+      "required_adapter_actions": [
+        "Proxy native enrollment and tunnel protocol. Do not alias machine pairing to an Agents environment endpoint."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/agents-api/configuration",
+        "https://developers.openai.com/api/docs/guides/agents-api/environments/openai-hosted"
+      ]
+    },
+    {
+      "family": "OAuth, device login and agent credentials",
+      "native_entries": [
+        "oauth-token",
+        "oauth-revoke",
+        "device-usercode",
+        "device-token",
+        "personal-token-whoami",
+        "agent-register",
+        "agent-task-register",
+        "oauth-authorize"
+      ],
+      "native_paths": [
+        "/oauth/token",
+        "/oauth/revoke",
+        "/api/accounts/deviceauth/usercode",
+        "/api/accounts/deviceauth/token",
+        "/api/accounts/v1/user-auth-credential/whoami",
+        "/api/accounts/v1/agent/register",
+        "/api/accounts/v1/agent/{agent_runtime_id}/task/register",
+        "/oauth/authorize"
+      ],
+      "native_auth": [
+        "oauth_body",
+        "none",
+        "personal_access_token",
+        "subscription",
+        "signed_body",
+        "browser_session"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/login/src/server.rs",
+          "line": 827
+        },
+        {
+          "path": "codex-rs/login/src/auth/revoke.rs",
+          "line": 150
+        },
+        {
+          "path": "codex-rs/login/src/device_code_auth.rs",
+          "line": 68
+        },
+        {
+          "path": "codex-rs/login/src/device_code_auth.rs",
+          "line": 107
+        },
+        {
+          "path": "codex-rs/login/src/auth/personal_access_token.rs",
+          "line": 13
+        },
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 470
+        },
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 479
+        },
+        {
+          "path": "codex-rs/login/src/server.rs",
+          "line": 611
+        }
+      ],
+      "classification": "no_documented_counterpart",
+      "corresponding_public_api": null,
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Codex authentication endpoints issue/refresh/revoke ChatGPT or agent credentials. OpenAI Platform resource operations use Platform credentials and do not turn subscription login tokens into project API keys."
+      ],
+      "required_adapter_actions": [
+        "Keep original authentication authorities/flows separate from inference subscription replacement. Do not invent /v1/login or leak gateway subscription credentials to downstream clients."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    },
+    {
+      "family": "Telemetry and feedback",
+      "native_entries": [
+        "analytics-events",
+        "otel-metrics",
+        "feedback-envelope"
+      ],
+      "native_paths": [
+        "/backend-api/codex/analytics-events/events",
+        "/otlp/v1/metrics",
+        "/api/4510195390611458/envelope/"
+      ],
+      "native_auth": [
+        "subscription",
+        "telemetry",
+        "sentry_dsn"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/analytics/src/client.rs",
+          "line": 141
+        },
+        {
+          "path": "codex-rs/otel/src/config.rs",
+          "line": 9
+        },
+        {
+          "path": "codex-rs/feedback/src/upload.rs",
+          "line": 42
+        }
+      ],
+      "classification": "no_documented_counterpart",
+      "corresponding_public_api": null,
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Client analytics events, OTLP metrics and Sentry envelopes are product telemetry; organization Usage/Costs and audit logs are different server-side resources."
+      ],
+      "required_adapter_actions": [
+        "If proxying these first-party routes, preserve destination and content type; do not label telemetry uploads as official usage APIs."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference",
+        "https://developers.openai.com/cookbook/examples/completions_usage_api"
+      ]
+    },
+    {
+      "family": "Distribution and assets",
+      "native_entries": [
+        "desktop-appcast",
+        "cli-installer-sh",
+        "cli-installer-ps1",
+        "pet-assets",
+        "desktop-appcast-cdn",
+        "desktop-appcast-cdn-x64",
+        "desktop-windows-update",
+        "desktop-dmg-arm64",
+        "desktop-dmg-x64"
+      ],
+      "native_paths": [
+        "/backend-api/wham/app/appcast",
+        "/codex/install.sh",
+        "/codex/install.ps1",
+        "/codex/pets/v1/{spritesheet_file}",
+        "/codex-app-prod/appcast.xml",
+        "/codex-app-prod/appcast-x64.xml",
+        "/codex-app-prod/windows-store-update.json",
+        "/codex-app-prod/Codex.dmg",
+        "/codex-app-prod/Codex-latest-x64.dmg"
+      ],
+      "native_auth": [
+        "none"
+      ],
+      "source": [
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 43
+        },
+        {
+          "path": "codex-rs/app-server-daemon/src/update_loop.rs",
+          "line": 46
+        },
+        {
+          "path": "codex-rs/app-server-daemon/src/update_loop.rs",
+          "line": 48
+        },
+        {
+          "path": "codex-rs/tui/src/pets/asset_pack.rs",
+          "line": 29
+        },
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 41
+        },
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 39
+        },
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 46
+        },
+        {
+          "path": "codex-rs/cli/src/desktop_app/mac.rs",
+          "line": 10
+        },
+        {
+          "path": "codex-rs/cli/src/desktop_app/mac.rs",
+          "line": 12
+        }
+      ],
+      "classification": "no_documented_counterpart",
+      "corresponding_public_api": null,
+      "related_public_api": [],
+      "shape_and_semantic_differences": [
+        "Installer scripts, update manifests and sprite assets are static distribution resources, not Platform API model or file records."
+      ],
+      "required_adapter_actions": [
+        "Proxy native assets without introducing fictitious OpenAI /v1 endpoints."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference"
+      ]
+    }
+  ],
+  "additional_public_operations": [
+    {
+      "family": "Recorded audio transcription",
+      "classification": "new_workflow_not_native_proxy",
+      "corresponding_public_api": [
+        "POST /v1/audio/transcriptions"
+      ],
+      "native_api": null,
+      "evidence": "The 96-entry source inventory and direct Rust search found only Realtime-based transcription, not an HTTP audio transcription call.",
+      "public_shape": "Multipart file + model, optional prompt/language/response_format/stream and model-specific fields; JSON text plus optional usage/logprobs, or text/SSE/other model-specific formats.",
+      "required_adapter_actions": [
+        "The original direct WebSocket transcription workflow requires API key auth, so subscription-only gateway feasibility needs a supported alternative verified first. If this additional facade is desired, decode supported audio files, resample to the exact original Realtime PCM format, configure transcription, append and commit, await final transcript and preserve failures. Implement requested output semantics or reject explicitly. This is not solved by routing to an invented backend audio/transcriptions path."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create",
+        "https://developers.openai.com/api/docs/guides/realtime-transcription"
+      ]
+    },
+    {
+      "family": "Realtime call control and ephemeral credentials",
+      "classification": "new_workflow_not_native_proxy",
+      "corresponding_public_api": [
+        "POST /v1/realtime/calls/{call_id}/accept",
+        "POST /v1/realtime/calls/{call_id}/reject",
+        "POST /v1/realtime/calls/{call_id}/hangup",
+        "POST /v1/realtime/calls/{call_id}/refer",
+        "POST /v1/realtime/client_secrets"
+      ],
+      "native_api": null,
+      "evidence": "Pinned source invokes call creation and sideband WebSocket; no corresponding native HTTP control or ephemeral-client-secret route appears in the inventory.",
+      "required_adapter_actions": [
+        "Do not promise these work because create-call works. Verify an actual subscription-backed control/token endpoint or implement a well-defined supported lifecycle adapter. Platform SIP accept/reject/refer controls do not follow automatically from a Codex conversation transport."
+      ],
+      "official_sources": [
+        "https://developers.openai.com/api/docs/guides/voice-sip?api=realtime",
+        "https://developers.openai.com/api/docs/guides/realtime"
+      ]
+    }
+  ],
+  "coverage": {
+    "native_entries_classified": 96,
+    "native_entries_total": 96,
+    "families": 21
+  }
+}

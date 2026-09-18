@@ -1,0 +1,2759 @@
+{
+  "codex_release": "0.155.0",
+  "commit": "f0a1b8f0849d90960bc406b848f32e5a129b0457",
+  "source_root": "https://github.com/openai/codex/tree/f0a1b8f0849d90960bc406b848f32e5a129b0457",
+  "inventory_method": "Read production Rust source for first-party request constructors, URL builders, and all HTTP/WebSocket clients. Method GET on streaming endpoints denotes HTTP WebSocket upgrade or MCP SSE GET as documented. Public counterparts are source-backed family mappings, not unsupported completeness claims.",
+  "entries": [
+    {
+      "id": "responses",
+      "methods": [
+        "POST",
+        "GET"
+      ],
+      "path": "/backend-api/codex/responses",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "ResponsesApiRequest JSON; compressed zstd JSON supported. GET upgrade carries response.create JSON messages.",
+      "response": "SSE response.* events or WebSocket text events.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": "/v1/responses",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+          "line": 42
+        }
+      ],
+      "library": "codex-api",
+      "notes": "HTTP and WS share serialized ResponsesApiRequest. Native response shapes must be passed through without narrowing.",
+      "documentation": "docs/codex-responses.md",
+      "gateway_paths": [
+        "/backend-api/codex/responses",
+        "/codex/responses"
+      ]
+    },
+    {
+      "id": "guardian",
+      "methods": [
+        "POST",
+        "GET"
+      ],
+      "path": "/backend-api/codex/guardian",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "ResponsesApiRequest JSON / response.create WebSocket message.",
+      "response": "SSE or WebSocket Responses events.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+          "line": 43
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Dedicated Guardian authorization-review inference; no separate official endpoint. Same wire family as Responses.",
+      "documentation": "docs/guardian.md",
+      "gateway_paths": [
+        "/backend-api/codex/guardian",
+        "/codex/guardian"
+      ]
+    },
+    {
+      "id": "guardian-classifier",
+      "methods": [
+        "POST",
+        "GET"
+      ],
+      "path": "/backend-api/codex/guardian-classifier",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "ResponsesApiRequest JSON / response.create WebSocket message.",
+      "response": "SSE or WebSocket Responses events.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/responses.rs",
+          "line": 44
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Dedicated Guardian authorization-review inference; no separate official endpoint. Same wire family as Responses.",
+      "documentation": "docs/guardian-classifier.md",
+      "gateway_paths": [
+        "/backend-api/codex/guardian-classifier",
+        "/codex/guardian-classifier"
+      ]
+    },
+    {
+      "id": "models",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/codex/models",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "GET query client_version; optional If-None-Match.",
+      "response": "ModelsResponse JSON with models metadata and ETag, or 304.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": "/v1/models",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/models.rs",
+          "line": 31
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Public list shape requires object:list/data mapping; native model metadata must remain intact.",
+      "documentation": "docs/codex-models.md",
+      "gateway_paths": [
+        "/backend-api/codex/models",
+        "/codex/models"
+      ]
+    },
+    {
+      "id": "image-generations",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/images/generations",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "ImageGenerationRequest {prompt,model,background?,n?,quality?,size?}.",
+      "response": "ImageResponse {created,data:[{b64_json,generation_id?}],background?,quality?,size?}; preserve additional upstream fields.",
+      "query": [],
+      "headers": [
+        "x-codex-image-turn-id",
+        "originator"
+      ],
+      "public_counterpart": "/v1/images/generations",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/images.rs",
+          "line": 41
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Native tool image_gen.imagegen uses gpt-image-2, auto quality/background/size.",
+      "documentation": "docs/images-generations.md",
+      "gateway_paths": [
+        "/backend-api/codex/images/generations",
+        "/codex/images/generations"
+      ]
+    },
+    {
+      "id": "image-edits",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/images/edits",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "ImageEditRequest {prompt,model,images:[{image_url}],background?,n?,quality?,size?}.",
+      "response": "ImageResponse; preserve additional upstream fields.",
+      "query": [],
+      "headers": [
+        "x-codex-image-turn-id",
+        "originator"
+      ],
+      "public_counterpart": "/v1/images/edits",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/images.rs",
+          "line": 54
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Public API multipart image/image[] needs adapter to original images[] data URLs; native Codex max 5 references.",
+      "documentation": "docs/images-edits.md",
+      "gateway_paths": [
+        "/backend-api/codex/images/edits",
+        "/codex/images/edits"
+      ]
+    },
+    {
+      "id": "search",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/search",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "SearchRequest {id,model,reasoning?,input?,commands?,settings?,max_output_tokens?}; commands supports search_query,image_query,open,click,find,screenshot,finance,weather,sports,time,response_length.",
+      "response": "SearchResponse {output:string,encrypted_output?:string,results?:[opaque JSON result DTOs]}.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/search.rs",
+          "line": 32
+        }
+      ],
+      "library": "codex-api",
+      "notes": "No standalone public search endpoint. Official web_search and web_search_preview are tools on /v1/responses; source tools/src/tool_spec.rs documents web_search mapping.",
+      "documentation": "docs/search.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/search",
+        "/codex/alpha/search"
+      ]
+    },
+    {
+      "id": "memory-trace-summarize",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/memories/trace_summarize",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "MemorySummarizeInput {model,traces:[{id,metadata:{source_path},items:[opaque JSON]}],reasoning?}.",
+      "response": "{output:[{trace_summary:string,memory_summary:string}]}; trace_summary has raw_memory deserialization alias.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/memories.rs",
+          "line": 33
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Codex internal memory API; no public OpenAI memory API counterpart.",
+      "documentation": "docs/memory-trace-summarize.md",
+      "gateway_paths": [
+        "/backend-api/codex/memories/trace_summarize",
+        "/codex/memories/trace_summarize"
+      ]
+    },
+    {
+      "id": "history-list_windows",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/history/v2/list_windows",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 86
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/history-list-windows.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/history/v2/list_windows",
+        "/codex/alpha/history/v2/list_windows"
+      ]
+    },
+    {
+      "id": "history-list_items",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/history/v2/list_items",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 87
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/history-list-items.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/history/v2/list_items",
+        "/codex/alpha/history/v2/list_items"
+      ]
+    },
+    {
+      "id": "history-read_item",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/history/v2/read_item",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 88
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/history-read-item.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/history/v2/read_item",
+        "/codex/alpha/history/v2/read_item"
+      ]
+    },
+    {
+      "id": "history-search_contents",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/history/v2/search_contents",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy",
+        "x-openai-encrypted-tool-arguments"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 89
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/history-search-contents.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/history/v2/search_contents",
+        "/codex/alpha/history/v2/search_contents"
+      ]
+    },
+    {
+      "id": "notes-list_files_by_prefix",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/notes/v2/list_files_by_prefix",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 90
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/notes-list-files-by-prefix.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/notes/v2/list_files_by_prefix",
+        "/codex/alpha/notes/v2/list_files_by_prefix"
+      ]
+    },
+    {
+      "id": "notes-read_file",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/notes/v2/read_file",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 91
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/notes-read-file.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/notes/v2/read_file",
+        "/codex/alpha/notes/v2/read_file"
+      ]
+    },
+    {
+      "id": "notes-search_contents",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/notes/v2/search_contents",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy",
+        "x-openai-encrypted-tool-arguments"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 92
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/notes-search-contents.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/notes/v2/search_contents",
+        "/codex/alpha/notes/v2/search_contents"
+      ]
+    },
+    {
+      "id": "notes-append_to_file",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/notes/v2/append_to_file",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy",
+        "x-openai-encrypted-tool-arguments"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 93
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/notes-append-to-file.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/notes/v2/append_to_file",
+        "/codex/alpha/notes/v2/append_to_file"
+      ]
+    },
+    {
+      "id": "notes-write_file",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/notes/v2/write_file",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Original tool arguments plus context:{session_id,current_agent_name}.",
+      "response": "Arbitrary JSON tool output.",
+      "query": [],
+      "headers": [
+        "x-openai-tool-output-truncation-policy",
+        "x-openai-encrypted-tool-arguments"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/tools.rs",
+          "line": 94
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Argument schemas in ext/history-notes/src/tools.rs; exact body passthrough avoids decrypting encrypted arguments.",
+      "documentation": "docs/notes-write-file.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/notes/v2/write_file",
+        "/codex/alpha/notes/v2/write_file"
+      ]
+    },
+    {
+      "id": "notes-thread-hint",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/alpha/notes/v2/thread_hint",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "JSON {context:{session_id:string,current_agent_name:string}}.",
+      "response": "{text:string}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/ext/history-notes/src/extension.rs",
+          "line": 122
+        }
+      ],
+      "library": "codex-api",
+      "notes": "",
+      "documentation": "docs/notes-thread-hint.md",
+      "gateway_paths": [
+        "/backend-api/codex/alpha/notes/v2/thread_hint",
+        "/codex/alpha/notes/v2/thread_hint"
+      ]
+    },
+    {
+      "id": "realtime-calls",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/realtime/calls",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "ChatGPT with session: JSON {sdp,session}. Sessionless: raw application/sdp. Public API: multipart sdp+session.",
+      "response": "SDP answer bytes; Location header carries call_id.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": "/v1/realtime/calls",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_call.rs",
+          "line": 63
+        }
+      ],
+      "library": "codex-api",
+      "notes": "intent=quicksilver&architecture=avas for V1/frameless backend. Location rewriting needed to keep clients on gateway. Original RealtimeCallClient implements request-shape split.",
+      "documentation": "docs/realtime-calls.md",
+      "gateway_paths": [
+        "/backend-api/codex/realtime/calls",
+        "/codex/realtime/calls"
+      ]
+    },
+    {
+      "id": "realtime",
+      "methods": [
+        "GET"
+      ],
+      "path": "/v1/realtime",
+      "scope": "openai_api",
+      "auth": "api_key_or_existing_call_subscription",
+      "request": "GET WebSocket upgrade with model?,intent?,call_id?; original session.update/audio/conversation events.",
+      "response": "Full duplex WebSocket text and binary/protocol events.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": "/v1/realtime",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_websocket/methods.rs",
+          "line": 1077
+        },
+        {
+          "path": "codex-rs/core/src/realtime_conversation.rs",
+          "line": 1246
+        },
+        {
+          "path": "codex-rs/core/src/realtime_conversation.rs",
+          "line": 1773
+        },
+        {
+          "path": "codex-rs/core/src/client.rs",
+          "line": 412
+        }
+      ],
+      "library": "codex-api",
+      "notes": "Gateway alias /backend-api/codex/realtime may route to fixed api.openai.com/v1/realtime. Actual official direct WS uses provider.to_api_provider(ApiKey), requires API key at core/src/realtime_conversation.rs:1773. WebRTC existing-call sideband accepts same ChatGPT bearer+account ID used for creation per core/src/client.rs:412. Do not claim direct subscription new-session auth is supported.",
+      "gateway_aliases": [
+        "/codex/realtime",
+        "/backend-api/codex/realtime"
+      ],
+      "documentation": "docs/realtime.md",
+      "gateway_paths": [
+        "/v1/realtime",
+        "/codex/realtime",
+        "/backend-api/codex/realtime",
+        "/platform/realtime"
+      ]
+    },
+    {
+      "id": "realtime-live",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "path": "/v1/live",
+      "scope": "openai_api",
+      "auth": "provider",
+      "request": "POST multipart sdp/session; GET upgrade direct frameless session.",
+      "response": "SDP answer + Location or WebSocket frames.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_call.rs",
+          "line": 72
+        }
+      ],
+      "library": "codex-codex-api",
+      "notes": "Experimental frameless realtime v3; source establishes native API route but not a documented public counterpart.",
+      "documentation": "docs/live.md",
+      "gateway_paths": [
+        "/v1/live",
+        "/codex/live",
+        "/backend-api/codex/live",
+        "/platform/live"
+      ]
+    },
+    {
+      "id": "realtime-live-call",
+      "methods": [
+        "GET"
+      ],
+      "path": "/v1/live/{call_id}",
+      "scope": "openai_api",
+      "auth": "provider",
+      "request": "WebSocket sideband, existing call_id in path.",
+      "response": "Frameless full duplex frames.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/endpoint/realtime_websocket/methods.rs",
+          "line": 1129
+        }
+      ],
+      "library": "codex-codex-api",
+      "notes": "Default sideband base https://api.openai.com/v1 is hardcoded in original RealtimeWebsocketClient::new; explicit override builder exists.",
+      "documentation": "docs/live-call.md",
+      "gateway_paths": [
+        "/v1/live/{call_id}",
+        "/codex/live/{call_id}",
+        "/backend-api/codex/live/{call_id}",
+        "/platform/live/{call_id}"
+      ]
+    },
+    {
+      "id": "accounts-check",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/accounts/check",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "{accounts:AccountEntry[] or object keyed by account ID,account_ordering:[string],default_account_id?:string}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 344
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/accounts/check",
+      "documentation": "docs/accounts-check.md",
+      "gateway_paths": [
+        "/backend-api/wham/accounts/check",
+        "/api/codex/accounts/check"
+      ]
+    },
+    {
+      "id": "profiles-me",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/profiles/me",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "TokenUsageProfile",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 361
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/profiles/me",
+      "documentation": "docs/profiles-me.md",
+      "gateway_paths": [
+        "/backend-api/wham/profiles/me",
+        "/api/codex/profiles/me"
+      ]
+    },
+    {
+      "id": "accounts-credit-nudge",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/accounts/send_add_credits_nudge_email",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{credit_type:\"credits\"|\"usage_limit\"}",
+      "response": "Empty success",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 657
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/accounts/send_add_credits_nudge_email",
+      "documentation": "docs/accounts-credit-nudge.md",
+      "gateway_paths": [
+        "/backend-api/wham/accounts/send_add_credits_nudge_email",
+        "/api/codex/accounts/send_add_credits_nudge_email"
+      ]
+    },
+    {
+      "id": "tasks-list",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/tasks/list",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query limit?,task_filter?,environment_id?,cursor?.",
+      "response": "PaginatedListTaskListItem",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 401
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/tasks/list",
+      "documentation": "docs/tasks-list.md",
+      "gateway_paths": [
+        "/backend-api/wham/tasks/list",
+        "/api/codex/tasks/list"
+      ]
+    },
+    {
+      "id": "task-create",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/tasks",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Arbitrary JSON create-task body (CloudTasksClient constructs from prompt/environment).",
+      "response": "CodeTask response: task.id or id",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 520
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/tasks",
+      "documentation": "docs/task-create.md",
+      "gateway_paths": [
+        "/backend-api/wham/tasks",
+        "/api/codex/tasks"
+      ]
+    },
+    {
+      "id": "task-read",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/tasks/{task_id}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Path task_id.",
+      "response": "CodeTaskDetailsResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 437
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/tasks/{task_id}",
+      "documentation": "docs/task-read.md",
+      "gateway_paths": [
+        "/backend-api/wham/tasks/{task_id}",
+        "/api/codex/tasks/{task_id}"
+      ]
+    },
+    {
+      "id": "task-sibling-turns",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/tasks/{task_id}/turns/{turn_id}/sibling_turns",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Path task_id,turn_id.",
+      "response": "TurnAttemptsSiblingTurnsResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 456
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/tasks/{task_id}/turns/{turn_id}/sibling_turns",
+      "documentation": "docs/task-sibling-turns.md",
+      "gateway_paths": [
+        "/backend-api/wham/tasks/{task_id}/turns/{turn_id}/sibling_turns",
+        "/api/codex/tasks/{task_id}/turns/{turn_id}/sibling_turns"
+      ]
+    },
+    {
+      "id": "config-bundle",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/config/bundle",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "ConfigBundleResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 474
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/config/bundle",
+      "documentation": "docs/config-bundle.md",
+      "gateway_paths": [
+        "/backend-api/wham/config/bundle",
+        "/api/codex/config/bundle"
+      ]
+    },
+    {
+      "id": "user-settings",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/settings/user",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Cache-Control: no-cache, no-store.",
+      "response": "CodexUserSettingsResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 674
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/settings/user",
+      "documentation": "docs/user-settings.md",
+      "gateway_paths": [
+        "/backend-api/wham/settings/user",
+        "/api/codex/settings/user"
+      ]
+    },
+    {
+      "id": "workspace-messages",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/workspace-messages",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Cache-Control: no-store.",
+      "response": "CodexWorkspaceMessagesResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client.rs",
+          "line": 667
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/workspace-messages",
+      "documentation": "docs/workspace-messages.md",
+      "gateway_paths": [
+        "/backend-api/wham/workspace-messages",
+        "/api/codex/workspace-messages"
+      ]
+    },
+    {
+      "id": "usage",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/usage",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body; optional x-openai-codex-luna-reserve:1 request header.",
+      "response": "RateLimitStatusPayload; original client maps snapshots/reset credits",
+      "query": [],
+      "headers": [
+        "x-openai-codex-luna-reserve"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client/rate_limit_resets.rs",
+          "line": 127
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/usage",
+      "documentation": "docs/usage.md",
+      "gateway_paths": [
+        "/backend-api/wham/usage",
+        "/api/codex/usage"
+      ]
+    },
+    {
+      "id": "reset-credits-list",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/rate-limit-reset-credits",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "RateLimitResetCreditsDetails",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client/rate_limit_resets.rs",
+          "line": 137
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/rate-limit-reset-credits",
+      "documentation": "docs/reset-credits-list.md",
+      "gateway_paths": [
+        "/backend-api/wham/rate-limit-reset-credits",
+        "/api/codex/rate-limit-reset-credits"
+      ]
+    },
+    {
+      "id": "reset-credit-consume",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/rate-limit-reset-credits/consume",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{redeem_request_id,credit_id?}",
+      "response": "ConsumeRateLimitResetCreditResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client/rate_limit_resets.rs",
+          "line": 151
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/rate-limit-reset-credits/consume",
+      "documentation": "docs/reset-credit-consume.md",
+      "gateway_paths": [
+        "/backend-api/wham/rate-limit-reset-credits/consume",
+        "/api/codex/rate-limit-reset-credits/consume"
+      ]
+    },
+    {
+      "id": "thread-estimates",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/usage/thread-estimates/query",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{threads:[{thread_id:string,turn_ids:string[]}],include_settled_response_ids:boolean}; original client sends true.",
+      "response": "{threads:[{thread_id,turns:[]}]}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client/chatgpt_turn_cost.rs",
+          "line": 55
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/usage/thread-estimates/query",
+      "documentation": "docs/thread-estimates.md",
+      "gateway_paths": [
+        "/backend-api/wham/usage/thread-estimates/query",
+        "/api/codex/usage/thread-estimates/query"
+      ]
+    },
+    {
+      "id": "thread-usage",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/usage/thread_usage/query",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{thread_ids:[string]}",
+      "response": "{threads:[ThreadUsage]}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client/thread_usage.rs",
+          "line": 80
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/usage/thread_usage/query",
+      "documentation": "docs/thread-usage.md",
+      "gateway_paths": [
+        "/backend-api/wham/usage/thread_usage/query",
+        "/api/codex/usage/thread_usage/query"
+      ]
+    },
+    {
+      "id": "environments-list",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/environments",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "[{id:string,label?:string,is_pinned?:boolean,task_count?:integer}]; additional environment fields are preserved.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cloud-tasks/src/env_detect.rs",
+          "line": 90
+        }
+      ],
+      "library": "codex-cloud-tasks",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/environments",
+      "documentation": "docs/environments-list.md",
+      "gateway_paths": [
+        "/backend-api/wham/environments",
+        "/api/codex/environments"
+      ]
+    },
+    {
+      "id": "environments-by-repo",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/environments/by-repo/{provider}/{owner}/{repo}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Path provider=\"github\", owner:string, repo:string.",
+      "response": "[{id:string,label?:string,is_pinned?:boolean,task_count?:integer}]; additional environment fields are preserved.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cloud-tasks/src/env_detect.rs",
+          "line": 57
+        }
+      ],
+      "library": "codex-cloud-tasks",
+      "notes": "Alternative PathStyle::CodexApi path: /api/codex/environments/by-repo/{provider}/{owner}/{repo}",
+      "documentation": "docs/environments-by-repo.md",
+      "gateway_paths": [
+        "/backend-api/wham/environments/by-repo/{provider}/{owner}/{repo}",
+        "/api/codex/environments/by-repo/{provider}/{owner}/{repo}"
+      ]
+    },
+    {
+      "id": "file-create",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/files",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{file_name:string,file_size:integer,use_case:\"codex\",codex_connector_id?:string,codex_action_name?:string,codex_model?:string}",
+      "response": "{file_id:string,upload_url:string,pdf_c2pa_reservation?:object}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": "/v1/files",
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/files.rs",
+          "line": 138
+        }
+      ],
+      "library": "codex-codex-api",
+      "notes": "Public multipart Files create needs create->signed upload->finalize orchestration. Files list/read/delete cannot be claimed from this pinned upload client alone.",
+      "documentation": "docs/file-create.md",
+      "gateway_paths": [
+        "/backend-api/files"
+      ]
+    },
+    {
+      "id": "file-upload-complete",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/files/{file_id}/uploaded",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{} or {pdf_c2pa_create_request:<reservation create body>}",
+      "response": "{status:string,download_url?:string,file_name?:string,mime_type?:string,error_message?:string,file_size_bytes?:integer}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/files.rs",
+          "line": 256
+        }
+      ],
+      "library": "codex-codex-api",
+      "notes": "",
+      "documentation": "docs/file-upload-complete.md",
+      "gateway_paths": [
+        "/backend-api/files/{file_id}/uploaded"
+      ]
+    },
+    {
+      "id": "file-blob-upload",
+      "methods": [
+        "PUT"
+      ],
+      "path": "{upload_url}",
+      "scope": "signed_url",
+      "auth": "signed_url",
+      "request": "Raw file stream; x-ms-blob-type:BlockBlob; original content headers.",
+      "response": "Azure/storage HTTP status.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-api/src/files.rs",
+          "line": 186
+        }
+      ],
+      "library": "codex-codex-api",
+      "notes": "URL comes only from authenticated file-create response; upload must carry no ChatGPT bearer. Original upload_openai_file enforces limit and performs original three-stage protocol.",
+      "documentation": "docs/transfers.md",
+      "gateway_paths": [
+        "/transfers/{handle}"
+      ]
+    },
+    {
+      "id": "connectors-directory",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/connectors/directory/list",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query token?:string, external_logos=true.",
+      "response": "{apps:[DirectoryApp],next_token?:string}; nextToken is also accepted by Codex.",
+      "query": [
+        "token",
+        "external_logos"
+      ],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/connectors/src/lib.rs",
+          "line": 272
+        }
+      ],
+      "library": "codex-connectors",
+      "notes": "",
+      "documentation": "docs/connectors-directory.md",
+      "gateway_paths": [
+        "/backend-api/connectors/directory/list"
+      ]
+    },
+    {
+      "id": "connectors-workspace-directory",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/connectors/directory/list_workspace",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query external_logos=true.",
+      "response": "{apps:[DirectoryApp],next_token?:string}; nextToken is also accepted by Codex.",
+      "query": [
+        "external_logos"
+      ],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/connectors/src/lib.rs",
+          "line": 191
+        }
+      ],
+      "library": "codex-connectors",
+      "notes": "",
+      "documentation": "docs/connectors-workspace-directory.md",
+      "gateway_paths": [
+        "/backend-api/connectors/directory/list_workspace"
+      ]
+    },
+    {
+      "id": "apps-batch",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/ps/apps/batch",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "GetAppsRequest {app_ids:[string],include_tools:boolean}.",
+      "response": "GetAppsResponse {apps:[BatchApp]}; native returns additional full action metadata unchanged.",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/chatgpt/src/connectors.rs",
+          "line": 173
+        }
+      ],
+      "library": "codex-chatgpt",
+      "notes": "",
+      "documentation": "docs/apps-batch.md",
+      "gateway_paths": [
+        "/backend-api/ps/apps/batch"
+      ]
+    },
+    {
+      "id": "apps-mcp",
+      "methods": [
+        "POST",
+        "GET",
+        "DELETE"
+      ],
+      "path": "/backend-api/ps/mcp",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "MCP Streamable HTTP JSON-RPC initialize,notifications/initialized,tools/list,tools/call,resources/list/read,elicitation replies; MCP session lifecycle.",
+      "response": "application/json or text/event-stream; MCP session headers must be preserved.",
+      "query": [],
+      "headers": [
+        "x-openai-product-sku",
+        "originator",
+        "mcp-session-id",
+        "mcp-protocol-version",
+        "last-event-id",
+        "accept"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/codex-mcp/src/mcp/mod.rs",
+          "line": 592
+        }
+      ],
+      "library": "codex-codex-mcp",
+      "notes": "Hosted plugins and Apps share this same MCP endpoint. Can use CODEX_CONNECTORS_TOKEN override. Remote arbitrary MCP endpoints are a separate user configuration, not this fixed service.",
+      "documentation": "docs/apps-mcp.md",
+      "gateway_paths": [
+        "/backend-api/ps/mcp",
+        "/api/codex/ps/mcp"
+      ]
+    },
+    {
+      "id": "plugins-suggested",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/suggested/codex",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query scope=GLOBAL.",
+      "response": "RecommendedPluginsResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 1021
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-suggested.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/suggested/codex"
+      ]
+    },
+    {
+      "id": "plugins-list",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/list",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query scope,limit,pageToken?,collection?.",
+      "response": "RemotePluginListResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2173
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-list.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/list"
+      ]
+    },
+    {
+      "id": "plugins-shared",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/workspace/shared",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query limit,pageToken?.",
+      "response": "RemotePluginListResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2195
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-shared.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/workspace/shared"
+      ]
+    },
+    {
+      "id": "plugins-installed",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/installed",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query limit? or scope?,pageToken?,includeDownloadUrls?.",
+      "response": "RemotePluginInstalledResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2215
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-installed.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/installed"
+      ]
+    },
+    {
+      "id": "plugin-read",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/{plugin_id}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query includeDownloadUrls?.",
+      "response": "RemotePluginDirectoryItem",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2263
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-read.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/{plugin_id}"
+      ]
+    },
+    {
+      "id": "plugin-skill-read",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/{plugin_id}/skills/{skill_name}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Path plugin_id,skill_name.",
+      "response": "RemotePluginSkillDetailResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 2275
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-skill-read.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/{plugin_id}/skills/{skill_name}"
+      ]
+    },
+    {
+      "id": "plugin-install",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/ps/plugins/{plugin_id}/install",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query includeAppsNeedingAuth=true; optional JSON {install_attempt_id:string}.",
+      "response": "RemotePluginMutationResponse",
+      "query": [
+        "includeAppsNeedingAuth=true"
+      ],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 1594
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-install.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/{plugin_id}/install"
+      ]
+    },
+    {
+      "id": "plugin-uninstall",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/ps/plugins/{plugin_id}/uninstall",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "RemotePluginMutationResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote.rs",
+          "line": 1691
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-uninstall.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/{plugin_id}/uninstall"
+      ]
+    },
+    {
+      "id": "plugins-search",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/search",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query q,scope?,limit,pageToken?.",
+      "response": "RemotePluginListResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/search.rs",
+          "line": 44
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-search.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/search"
+      ]
+    },
+    {
+      "id": "plugins-created",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/ps/plugins/workspace/created",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query limit,pageToken?.",
+      "response": "RemotePluginListResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 385
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-created.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/workspace/created"
+      ]
+    },
+    {
+      "id": "plugin-share-targets",
+      "methods": [
+        "PUT"
+      ],
+      "path": "/backend-api/ps/plugins/{plugin_id}/shares",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{discoverability,targets:[{principal_type,principal_id,role}]}",
+      "response": "RemotePluginShareUpdateTargetsResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 320
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-share-targets.md",
+      "gateway_paths": [
+        "/backend-api/ps/plugins/{plugin_id}/shares"
+      ]
+    },
+    {
+      "id": "plugin-upload-url",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/public/plugins/workspace/upload-url",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{filename,mime_type:\"application/gzip\",size_bytes,plugin_id?}",
+      "response": "RemoteWorkspacePluginUploadUrlResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 405
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-upload-url.md",
+      "gateway_paths": [
+        "/backend-api/public/plugins/workspace/upload-url"
+      ]
+    },
+    {
+      "id": "plugin-share-create",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/public/plugins/workspace",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "RemoteWorkspacePluginCreateRequest",
+      "response": "RemoteWorkspacePluginCreateResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 457
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-share-create.md",
+      "gateway_paths": [
+        "/backend-api/public/plugins/workspace"
+      ]
+    },
+    {
+      "id": "plugin-share-update",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/public/plugins/workspace/{plugin_id}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "RemoteWorkspacePluginCreateRequest",
+      "response": "RemoteWorkspacePluginCreateResponse",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 287
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-share-update.md",
+      "gateway_paths": [
+        "/backend-api/public/plugins/workspace/{plugin_id}"
+      ]
+    },
+    {
+      "id": "plugin-share-delete",
+      "methods": [
+        "DELETE"
+      ],
+      "path": "/backend-api/public/plugins/workspace/{plugin_id}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "204 No Content.",
+      "query": [],
+      "headers": [
+        "oai-product-sku"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 288
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-share-delete.md",
+      "gateway_paths": [
+        "/backend-api/public/plugins/workspace/{plugin_id}"
+      ]
+    },
+    {
+      "id": "plugins-featured-legacy",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/plugins/featured",
+      "scope": "backend",
+      "auth": "optional_subscription",
+      "request": "Query platform.",
+      "response": "string[] plugin IDs.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote_legacy.rs",
+          "line": 129
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugins-featured-legacy.md",
+      "gateway_paths": [
+        "/backend-api/plugins/featured"
+      ]
+    },
+    {
+      "id": "plugin-enable-legacy",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/plugins/{plugin_id}/enable",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "RemotePluginMutationResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote_legacy.rs",
+          "line": 194
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-enable-legacy.md",
+      "gateway_paths": [
+        "/backend-api/plugins/{plugin_id}/enable"
+      ]
+    },
+    {
+      "id": "plugin-uninstall-legacy",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/plugins/{plugin_id}/uninstall",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "No body.",
+      "response": "RemotePluginMutationResponse",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote_legacy.rs",
+          "line": 194
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/plugin-uninstall-legacy.md",
+      "gateway_paths": [
+        "/backend-api/plugins/{plugin_id}/uninstall"
+      ]
+    },
+    {
+      "id": "plugins-curated-export",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/plugins/export/curated",
+      "scope": "backend",
+      "auth": "none",
+      "request": "No body / original cache validation headers.",
+      "response": "Curated archive bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/startup_sync.rs",
+          "line": 27
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "Fixed production URL, selected only on startup sync route. Other branch downloads openai/plugins via GitHub APIs.",
+      "documentation": "docs/plugins-curated-export.md",
+      "gateway_paths": [
+        "/backend-api/plugins/export/curated"
+      ]
+    },
+    {
+      "id": "plugin-bundle-download",
+      "methods": [
+        "GET"
+      ],
+      "path": "{bundle_download_url}",
+      "scope": "signed_url",
+      "auth": "signed_url",
+      "request": "No body.",
+      "response": "Compressed plugin archive bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote_bundle.rs",
+          "line": 307
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "URL returned by authenticated plugin catalog; do not inject subscription auth into blob/download hosts.",
+      "documentation": "docs/transfers.md",
+      "gateway_paths": [
+        "/transfers/{handle}"
+      ]
+    },
+    {
+      "id": "plugin-blob-upload",
+      "methods": [
+        "PUT"
+      ],
+      "path": "{upload_url}",
+      "scope": "signed_url",
+      "auth": "signed_url",
+      "request": "Archive gzip bytes; x-ms-blob-type:BlockBlob; Content-Type:application/gzip.",
+      "response": "200 or 201.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/core-plugins/src/remote/share.rs",
+          "line": 423
+        }
+      ],
+      "library": "codex-core-plugins",
+      "notes": "",
+      "documentation": "docs/transfers.md",
+      "gateway_paths": [
+        "/transfers/{handle}"
+      ]
+    },
+    {
+      "id": "remote-enroll",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/remote/control/server/enroll",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "{name,os,arch,app_server_version,installation_id}.",
+      "response": "{server_id,environment_id,remote_control_token,expires_at}.",
+      "query": [],
+      "headers": [
+        "x-codex-installation-id"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/protocol.rs",
+          "line": 224
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "Requires subscription auth and account ID; source server_api.rs:send_remote_control_server_request.",
+      "documentation": "docs/remote-enroll.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/server/enroll",
+        "/api/codex/remote/control/server/enroll"
+      ]
+    },
+    {
+      "id": "remote-refresh",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/remote/control/server/refresh",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "RefreshRemoteServerRequest {server_id,installation_id}",
+      "response": "{server_id,environment_id,remote_control_token,expires_at}.",
+      "query": [],
+      "headers": [
+        "x-codex-installation-id"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/protocol.rs",
+          "line": 227
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "Requires subscription auth and account ID; source server_api.rs:send_remote_control_server_request.",
+      "documentation": "docs/remote-refresh.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/server/refresh",
+        "/api/codex/remote/control/server/refresh"
+      ]
+    },
+    {
+      "id": "remote-pair",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/remote/control/server/pair",
+      "scope": "backend",
+      "auth": "remote_control_token",
+      "request": "{manual_code:boolean}.",
+      "response": "{pairing_code,manual_pairing_code?,server_id,environment_id,expires_at}.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/enroll.rs",
+          "line": 66
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "Bearer token issued by enrollment; must preserve distinct from gateway and subscription authentication.",
+      "documentation": "docs/remote-pair.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/server/pair",
+        "/api/codex/remote/control/server/pair"
+      ]
+    },
+    {
+      "id": "remote-pair-status",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/wham/remote/control/server/pair/status",
+      "scope": "backend",
+      "auth": "remote_control_token",
+      "request": "{pairing_code?:string,manual_pairing_code?:string}; exactly selected code is sent.",
+      "response": "{claimed:boolean}.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/enroll.rs",
+          "line": 169
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "Bearer token issued by enrollment; must preserve distinct from gateway and subscription authentication.",
+      "documentation": "docs/remote-pair-status.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/server/pair/status",
+        "/api/codex/remote/control/server/pair/status"
+      ]
+    },
+    {
+      "id": "remote-server",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/remote/control/server",
+      "scope": "backend",
+      "auth": "remote_control_token",
+      "request": "WebSocket upgrade.",
+      "response": "Multiplexed remote-control WebSocket protocol carrying app-server messages.",
+      "query": [],
+      "headers": [
+        "x-codex-server-id",
+        "x-codex-name",
+        "x-codex-protocol-version",
+        "x-codex-installation-id",
+        "x-codex-host-device-kind",
+        "x-codex-subscribe-cursor"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/protocol.rs",
+          "line": 236
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "Original URL normalization accepts HTTPS chatgpt.com or subdomains/staging, and localhost HTTP(S) only; arbitrary K8s host override is rejected upstream.",
+      "documentation": "docs/remote-server.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/server",
+        "/api/codex/remote/control/server"
+      ]
+    },
+    {
+      "id": "remote-clients-list",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/remote/control/environments/{environment_id}/clients",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Query cursor?:string,limit?:integer,order?:asc|desc.",
+      "response": "{items:[{client_id:string,display_name?:string,device_type?:string,platform?:string,os_version?:string,device_model?:string,app_version?:string,last_seen_at?:RFC3339 string}],cursor?:string}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/clients.rs",
+          "line": 258
+        },
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/clients.rs",
+          "line": 26
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "",
+      "documentation": "docs/remote-clients-list.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/environments/{environment_id}/clients",
+        "/api/codex/remote/control/environments/{environment_id}/clients"
+      ]
+    },
+    {
+      "id": "remote-client-revoke",
+      "methods": [
+        "DELETE"
+      ],
+      "path": "/backend-api/wham/remote/control/environments/{environment_id}/clients/{client_id}",
+      "scope": "backend",
+      "auth": "subscription",
+      "request": "Path environment_id,client_id.",
+      "response": "Success status.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-transport/src/transport/remote_control/clients.rs",
+          "line": 211
+        }
+      ],
+      "library": "codex-app-server-transport",
+      "notes": "",
+      "documentation": "docs/remote-client-revoke.md",
+      "gateway_paths": [
+        "/backend-api/wham/remote/control/environments/{environment_id}/clients/{client_id}",
+        "/api/codex/remote/control/environments/{environment_id}/clients/{client_id}"
+      ]
+    },
+    {
+      "id": "agent-jwks",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/agent-identities/jwks",
+      "scope": "backend",
+      "auth": "none",
+      "request": "No body.",
+      "response": "JWK Set.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 486
+        }
+      ],
+      "library": "codex-agent-identity",
+      "notes": "Alternative nonbackend route /api/codex/agent-identities/jwks.",
+      "documentation": "docs/agent-jwks.md",
+      "gateway_paths": [
+        "/backend-api/wham/agent-identities/jwks",
+        "/api/codex/agent-identities/jwks"
+      ]
+    },
+    {
+      "id": "analytics-events",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/codex/analytics-events/events",
+      "scope": "telemetry",
+      "auth": "subscription",
+      "request": "JSON {events:[{event_type:string,event_params:object}]}; event_params is an event-specific union of Codex analytics DTOs.",
+      "response": "Upstream success status; no result object is decoded by the client.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/analytics/src/client.rs",
+          "line": 141
+        }
+      ],
+      "library": "codex-analytics",
+      "notes": "",
+      "documentation": "docs/analytics-events.md",
+      "gateway_paths": [
+        "/backend-api/codex/analytics-events/events",
+        "/codex/analytics-events/events"
+      ]
+    },
+    {
+      "id": "api-key-turn-costs",
+      "methods": [
+        "POST"
+      ],
+      "path": "/v1/analytics/codex/turn-costs",
+      "scope": "api_chatgpt",
+      "auth": "api_key",
+      "request": "{turn_ids:[string]}",
+      "response": "{turns:[ApiKeyTurnCost]}",
+      "query": [],
+      "headers": [
+        "openai-organization",
+        "openai-project"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/backend-client/src/client/turn_usage.rs",
+          "line": 62
+        }
+      ],
+      "library": "codex-backend-client",
+      "notes": "Default host api.chatgpt.com from chatgpt.com config; app-server may route provider.url_for_path(\"analytics/codex/turn-costs\") instead. Subscription does not substitute for API-key billing auth.",
+      "documentation": "docs/api-key-turn-costs.md",
+      "gateway_paths": [
+        "/telemetry/costs"
+      ]
+    },
+    {
+      "id": "oauth-token",
+      "methods": [
+        "POST"
+      ],
+      "path": "/oauth/token",
+      "scope": "auth",
+      "auth": "oauth_body",
+      "request": "Original grant_type and form/JSON fields: authorization_code form; refresh_token JSON; urn:ietf:params:oauth:grant-type:token-exchange form; urn:ietf:params:oauth:grant-type:jwt-bearer form. See docs/oauth-token.md.",
+      "response": "OAuth tokens JSON.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/login/src/server.rs",
+          "line": 827
+        }
+      ],
+      "library": "codex-login",
+      "notes": "",
+      "documentation": "docs/oauth-token.md",
+      "gateway_paths": [
+        "/auth/oauth/token"
+      ]
+    },
+    {
+      "id": "oauth-revoke",
+      "methods": [
+        "POST"
+      ],
+      "path": "/oauth/revoke",
+      "scope": "auth",
+      "auth": "oauth_body",
+      "request": "JSON `{token:string,token_type_hint:\"refresh_token\"|\"access_token\",client_id?:string}`; `client_id` accompanies refresh-token revocation.",
+      "response": "Original HTTP status; no result body is required.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/login/src/auth/revoke.rs",
+          "line": 150
+        }
+      ],
+      "library": "codex-login",
+      "notes": "",
+      "documentation": "docs/oauth-revoke.md",
+      "gateway_paths": [
+        "/auth/oauth/revoke"
+      ]
+    },
+    {
+      "id": "device-usercode",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/accounts/deviceauth/usercode",
+      "scope": "auth",
+      "auth": "none",
+      "request": "JSON {client_id:string}.",
+      "response": "{device_auth_id:string,user_code:string,interval?:string}; usercode alias accepted; interval is a string parsed as integer seconds.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/login/src/device_code_auth.rs",
+          "line": 68
+        }
+      ],
+      "library": "codex-login",
+      "notes": "",
+      "documentation": "docs/device-usercode.md",
+      "gateway_paths": [
+        "/auth/api/accounts/deviceauth/usercode"
+      ]
+    },
+    {
+      "id": "device-token",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/accounts/deviceauth/token",
+      "scope": "auth",
+      "auth": "none",
+      "request": "JSON {device_auth_id:string,user_code:string}.",
+      "response": "{authorization_code:string,code_challenge:string,code_verifier:string}; upstream 403/404 means pending authorization to the pinned polling client.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/login/src/device_code_auth.rs",
+          "line": 107
+        }
+      ],
+      "library": "codex-login",
+      "notes": "",
+      "documentation": "docs/device-token.md",
+      "gateway_paths": [
+        "/auth/api/accounts/deviceauth/token"
+      ]
+    },
+    {
+      "id": "personal-token-whoami",
+      "methods": [
+        "GET"
+      ],
+      "path": "/api/accounts/v1/user-auth-credential/whoami",
+      "scope": "auth",
+      "auth": "personal_access_token",
+      "request": "No body; Authorization: Bearer <personal-access-token>.",
+      "response": "{email?:string,chatgpt_user_id:string,chatgpt_account_id:string,chatgpt_plan_type:string,chatgpt_account_is_fedramp:boolean}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/login/src/auth/personal_access_token.rs",
+          "line": 13
+        }
+      ],
+      "library": "codex-login",
+      "notes": "",
+      "documentation": "docs/personal-token-whoami.md",
+      "gateway_paths": [
+        "/auth/api/accounts/v1/user-auth-credential/whoami"
+      ]
+    },
+    {
+      "id": "agent-register",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/accounts/v1/agent/register",
+      "scope": "auth",
+      "auth": "subscription",
+      "request": "JSON `{abom:{agent_version:string,agent_harness_id:string,running_location:string},agent_public_key:string,capabilities:string[],ttl?:integer}`.",
+      "response": "{agent_runtime_id:string}",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 470
+        },
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 139
+        }
+      ],
+      "library": "codex-agent-identity",
+      "notes": "",
+      "documentation": "docs/agent-register.md",
+      "gateway_paths": [
+        "/auth/api/accounts/v1/agent/register"
+      ]
+    },
+    {
+      "id": "agent-task-register",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/accounts/v1/agent/{agent_runtime_id}/task/register",
+      "scope": "auth",
+      "auth": "signed_body",
+      "request": "JSON {signature:base64-ed25519,timestamp:rfc3339}; no bearer auth.",
+      "response": "JSON object with optional task_id, taskId, encrypted_task_id, encryptedTaskId string fields.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 479
+        },
+        {
+          "path": "codex-rs/agent-identity/src/lib.rs",
+          "line": 139
+        }
+      ],
+      "library": "codex-agent-identity",
+      "notes": "",
+      "documentation": "docs/agent-task-register.md",
+      "gateway_paths": [
+        "/auth/api/accounts/v1/agent/{agent_runtime_id}/task/register"
+      ]
+    },
+    {
+      "id": "oauth-authorize",
+      "methods": [
+        "GET"
+      ],
+      "path": "/oauth/authorize",
+      "scope": "browser",
+      "auth": "browser_session",
+      "request": "Browser authorization query response_type/client_id/redirect_uri/scope/code_challenge/state/etc.",
+      "response": "Interactive browser redirects.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/login/src/server.rs",
+          "line": 611
+        }
+      ],
+      "library": "codex-login",
+      "notes": "Browser-owned interactive login, not a backend subscription inference operation; transparent issuer proxy needs correct redirect/cookie handling.",
+      "documentation": "docs/oauth-authorize.md",
+      "gateway_paths": [
+        "/oauth/authorize"
+      ]
+    },
+    {
+      "id": "otel-metrics",
+      "methods": [
+        "POST"
+      ],
+      "path": "/otlp/v1/metrics",
+      "scope": "ab_chatgpt",
+      "auth": "telemetry",
+      "request": "OTLP HTTP JSON metrics (OtelHttpProtocol::Json); statsig-api-key header.",
+      "response": "OTLP collector HTTP response.",
+      "query": [],
+      "headers": [
+        "statsig-api-key"
+      ],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/otel/src/config.rs",
+          "line": 9
+        }
+      ],
+      "library": "codex-otel",
+      "notes": "https://ab.chatgpt.com fixed default. Arbitrary configured OTLP collector is separate deployment configuration.",
+      "documentation": "docs/otel-metrics.md",
+      "gateway_paths": [
+        "/telemetry/metrics"
+      ]
+    },
+    {
+      "id": "feedback-envelope",
+      "methods": [
+        "POST"
+      ],
+      "path": "/api/4510195390611458/envelope/",
+      "scope": "sentry",
+      "auth": "sentry_dsn",
+      "request": "Sentry envelope binary/text; x-sentry-auth.",
+      "response": "Sentry upload status/retry headers.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/feedback/src/upload.rs",
+          "line": 42
+        }
+      ],
+      "library": "codex-feedback",
+      "notes": "Fixed DSN https://o33249.ingest.us.sentry.io; may include user-requested attachment data; not an OpenAI public API.",
+      "documentation": "docs/feedback-envelope.md",
+      "gateway_paths": [
+        "/telemetry/sentry"
+      ]
+    },
+    {
+      "id": "desktop-appcast",
+      "methods": [
+        "GET"
+      ],
+      "path": "/backend-api/wham/app/appcast",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "Query installation_id,arch=x64|arm64,app_version,beta=false,os-version,plan_type=unknown.",
+      "response": "Appcast XML.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 43
+        }
+      ],
+      "library": "codex-cli",
+      "notes": "",
+      "documentation": "docs/desktop-appcast.md",
+      "gateway_paths": [
+        "/backend-api/wham/app/appcast",
+        "/api/codex/app/appcast"
+      ]
+    },
+    {
+      "id": "cli-installer-sh",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex/install.sh",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body.",
+      "response": "Original static bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-daemon/src/update_loop.rs",
+          "line": 46
+        }
+      ],
+      "library": "codex-app-server-daemon",
+      "notes": "",
+      "documentation": "docs/cli-installer-sh.md",
+      "gateway_paths": [
+        "/distribution/chatgpt/codex/install.sh"
+      ]
+    },
+    {
+      "id": "cli-installer-ps1",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex/install.ps1",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body.",
+      "response": "Original static bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/app-server-daemon/src/update_loop.rs",
+          "line": 48
+        }
+      ],
+      "library": "codex-app-server-daemon",
+      "notes": "",
+      "documentation": "docs/cli-installer-ps1.md",
+      "gateway_paths": [
+        "/distribution/chatgpt/codex/install.ps1"
+      ]
+    },
+    {
+      "id": "pet-assets",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex/pets/v1/{spritesheet_file}",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body.",
+      "response": "Original static bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/tui/src/pets/asset_pack.rs",
+          "line": 29
+        }
+      ],
+      "library": "codex-tui",
+      "notes": "",
+      "documentation": "docs/pet-assets.md",
+      "gateway_paths": [
+        "/distribution/static/codex/pets/v1/{spritesheet_file}"
+      ]
+    },
+    {
+      "id": "desktop-appcast-cdn",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex-app-prod/appcast.xml",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body.",
+      "response": "Original static bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 41
+        }
+      ],
+      "library": "codex-cli",
+      "notes": "",
+      "documentation": "docs/desktop-appcast-cdn.md",
+      "gateway_paths": [
+        "/distribution/static/codex-app-prod/appcast.xml"
+      ]
+    },
+    {
+      "id": "desktop-appcast-cdn-x64",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex-app-prod/appcast-x64.xml",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body.",
+      "response": "Original static bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 39
+        }
+      ],
+      "library": "codex-cli",
+      "notes": "",
+      "documentation": "docs/desktop-appcast-cdn-x64.md",
+      "gateway_paths": [
+        "/distribution/static/codex-app-prod/appcast-x64.xml"
+      ]
+    },
+    {
+      "id": "desktop-windows-update",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex-app-prod/windows-store-update.json",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body.",
+      "response": "Original static bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cli/src/doctor/updates.rs",
+          "line": 46
+        }
+      ],
+      "library": "codex-cli",
+      "notes": "",
+      "documentation": "docs/desktop-windows-update.md",
+      "gateway_paths": [
+        "/distribution/static/codex-app-prod/windows-store-update.json"
+      ]
+    },
+    {
+      "id": "desktop-dmg-arm64",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex-app-prod/Codex.dmg",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body. Shell curl downloads original DMG.",
+      "response": "Apple signed DMG bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cli/src/desktop_app/mac.rs",
+          "line": 10
+        }
+      ],
+      "library": "codex-cli",
+      "notes": "Static installer, not subscription inference; origin persistent.oaistatic.com.",
+      "documentation": "docs/desktop-dmg-arm64.md",
+      "gateway_paths": [
+        "/distribution/static/codex-app-prod/Codex.dmg"
+      ]
+    },
+    {
+      "id": "desktop-dmg-x64",
+      "methods": [
+        "GET"
+      ],
+      "path": "/codex-app-prod/Codex-latest-x64.dmg",
+      "scope": "distribution",
+      "auth": "none",
+      "request": "No body. Shell curl downloads original DMG.",
+      "response": "Apple signed DMG bytes.",
+      "query": [],
+      "headers": [],
+      "public_counterpart": null,
+      "source": [
+        {
+          "path": "codex-rs/cli/src/desktop_app/mac.rs",
+          "line": 12
+        }
+      ],
+      "library": "codex-cli",
+      "notes": "Static installer, not subscription inference; origin persistent.oaistatic.com.",
+      "documentation": "docs/desktop-dmg-x64.md",
+      "gateway_paths": [
+        "/distribution/static/codex-app-prod/Codex-latest-x64.dmg"
+      ]
+    }
+  ],
+  "other_interfaces": [
+    {
+      "kind": "mcp_arbitrary",
+      "source": "codex-rs/rmcp-client/src/rmcp_client.rs",
+      "description": "User-configured MCP Streamable HTTP endpoints, OAuth discovery/registration/token URLs, WebSocket servers, and stdio subprocess JSON-RPC. Only first-party Apps /ps/mcp is a fixed backend route."
+    },
+    {
+      "kind": "developer_docs_mcp",
+      "source": "codex-rs/codex-mcp/src/openai_docs_source_attribution.rs:10",
+      "description": "Optional public https://developers.openai.com/mcp?source=codex; no subscription auth."
+    },
+    {
+      "kind": "local_app_server",
+      "source": "codex-rs/app-server-client/src/remote.rs",
+      "description": "App-server JSON-RPC over stdio, Unix domain socket, local/user-configured authenticated WebSocket; not an upstream OpenAI HTTP API. Full remote-control tunnel carries the messages without implementing each RPC."
+    },
+    {
+      "kind": "local_execution_ipc",
+      "source": "codex-rs/exec-server/src/client_transport.rs",
+      "description": "Exec-server gRPC/JSON-RPC, platform sandbox IPC, voice-host/WebRTC media, code-mode gRPC execution and thread-config gRPC load are local or user-provisioned runtime services."
+    },
+    {
+      "kind": "alternative_model_providers",
+      "source": "codex-rs/model-provider-info/src/lib.rs",
+      "description": "AWS Bedrock Mantle/runtime use AWS/SigV4; Ollama/LMStudio local endpoints use separate auth. They are unrelated to ChatGPT subscription auth and arbitrary provider base URLs are not an OpenAI origin."
+    },
+    {
+      "kind": "distribution_external",
+      "source": "codex-rs/core-plugins/src/startup_sync.rs:23",
+      "description": "GitHub openai/plugins repo/ref/zipball; GitHub openai/codex releases, npm registry package metadata, Homebrew metadata, and configured Git marketplaces/downloads. Static/software distribution, no subscription auth."
+    },
+    {
+      "kind": "browser_navigation",
+      "source": "codex-rs/login/src/success_page.rs",
+      "description": "ChatGPT app install pages, OAuth login browser pages, billing/help links, desktop deep links are browser navigation rather than direct backend HTTP request APIs."
+    },
+    {
+      "kind": "custom_telemetry",
+      "source": "codex-rs/otel/src/config.rs",
+      "description": "User-configured OTLP HTTP/gRPC exporters and local OTLP/trace WebSocket bridges may use arbitrary collector URLs."
+    },
+    {
+      "kind": "workload_identity_external",
+      "source": "codex-rs/workload-identity/src/exchange.rs",
+      "description": "External subject-token/STS attestation sources depend on configured workload identity provider; OpenAI token exchange lands on auth /oauth/token already inventoried."
+    }
+  ],
+  "origin_mappings": {
+    "backend": "https://chatgpt.com",
+    "inference": "https://chatgpt.com",
+    "auth": "https://auth.openai.com",
+    "openai_api": "https://api.openai.com",
+    "api_chatgpt": "https://api.chatgpt.com",
+    "ab_chatgpt": "https://ab.chatgpt.com",
+    "sentry": "https://o33249.ingest.us.sentry.io",
+    "distribution": [
+      "https://chatgpt.com",
+      "https://persistent.oaistatic.com"
+    ],
+    "signed_url": "Only URLs returned by authenticated first-party APIs, retain their exact signature query; never attach account auth."
+  },
+  "proxy_notes": [
+    "Use one raw HTTP/WS transport with route metadata rather than duplicate request/response DTOs for each native API. Preserve raw body, query, end-to-end request and response headers, status and stream chunks.",
+    "First-party backend routes use original AuthProvider + original HttpClientFactory cookie behavior. Authorization/ChatGPT-Account-ID/Fedramp belong to active upstream account; a separate gateway credential must be stripped.",
+    "Preserve Content-Encoding including zstd; do not decode then silently emit unchanged compressed Content-Length. Drop hop-by-hop headers and regenerate upgrade transport fields.",
+    "Remote enrollment token routes, personal access token, API-key billing, OAuth body flows and signed URLs each use distinct auth modes. Blanket subscription substitution is incorrect.",
+    "Only original infrastructure cookie jar persists Cloudflare cookies + __oailb; do not synthesize CSRF headers or browser session cookies, which Codex does not send. Configured additional cookies are scoped by original HttpClientFactory.",
+    "Responses compact/lite do not exist as original paths in this pinned release source; gateway compatibility adapters may offer them, but must not inventory them as original Codex endpoints.",
+    "chatgpt_base_url must be configured as gateway/backend-api separately from model provider base_url. Some callers also gate on cached Codex-backend auth; model provider actor marker alone does not enable every service.",
+    "Original remote-control URL normalization rejects arbitrary nonlocalhost gateway hosts; localhost forwarder or a minimal original-source configuration patch is required for remote-control at K8s domain.",
+    "Standalone audio/transcriptions HTTP route is absent in this release; transcription runs inside Realtime audio.input.transcription. A new /v1/audio/transcriptions endpoint would be an actual conversion/orchestration, not native path passthrough."
+  ],
+  "schema_version": 1
+}

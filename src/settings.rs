@@ -86,6 +86,8 @@ pub async fn load_backend(codex_home: PathBuf) -> anyhow::Result<Backend> {
         auth,
         factory,
         chatgpt_base_url,
+        platform_base_url: "https://api.openai.com/v1".into(),
+        auth_base_url: "https://auth.openai.com".into(),
         subscription_only: true,
         compression: features.enabled(codex_features::Feature::EnableRequestCompression),
         agent_identity_policy: if features.enabled(codex_features::Feature::UseAgentIdentity) {

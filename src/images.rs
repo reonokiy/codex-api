@@ -6,7 +6,7 @@ use crate::{
 };
 use axum::{
     extract::{FromRequest, Multipart, OriginalUri, Request, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::Response,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -159,17 +159,8 @@ async fn handle(
     standalone::handle(gateway, headers, async move {
         let input = if content_type.starts_with("multipart/form-data") && edit && !native {
             multipart_input(request).await?
-        } else if content_type
-            .split(';')
-            .next()
-            .is_some_and(|v| v.trim() == "application/json")
-        {
-            standalone::json::<Input>(request).await?
         } else {
-            return Err(extraction_error(
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "use application/json, or multipart/form-data for public image edits",
-            ));
+            standalone::json::<Input>(request).await?
         };
         input.into_codex(edit, native)
     })

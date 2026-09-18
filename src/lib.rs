@@ -1,14 +1,19 @@
 pub mod backend;
 pub mod error;
+pub mod files;
 pub mod images;
 mod lite_instructions;
+mod memories;
+pub mod native;
 pub mod output;
+pub mod realtime;
 pub mod request;
 mod search;
 pub mod server;
 pub mod settings;
 pub mod standalone;
 mod tools;
+pub mod transfers;
 pub mod transport;
 pub mod websocket;
 

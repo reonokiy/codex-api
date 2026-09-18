@@ -38,7 +38,8 @@ with tempfile.TemporaryDirectory() as home:
     (path / 'config.toml').write_text('cli_auth_credentials_store = "file"\n')
     container = docker('run', '-d', '--read-only', '--tmpfs', '/tmp',
                        '-p', '127.0.0.1::8080', '-v', f'{home}:/data:ro',
-                       '-e', 'CODEX_GATEWAY_API_KEY=container-test-key', image)
+                       '-e', 'CODEX_GATEWAY_API_KEY=container-test-key',
+                       '-e', 'CODEX_GATEWAY_PUBLIC_URL=https://container.example.invalid', image)
     try:
         port = docker('port', container, '8080/tcp').rsplit(':', 1)[1]
         base = f'http://127.0.0.1:{port}'
@@ -71,6 +72,22 @@ with tempfile.TemporaryDirectory() as home:
                 raise AssertionError('Invalid image request accepted')
             except urllib.error.HTTPError as error:
                 assert error.code == 400
-        print(f'Container startup, health, authentication, model catalog and standalone tool routes passed; {config["Size"] / 1024**2:.1f} MiB')
+        for endpoint in ('/v1/files', '/v1/realtime/calls', '/v1/live/sessions',
+                         '/codex/memories/trace_summarize', '/codex/guardian',
+                         '/backend-api/wham/tasks', '/backend-api/ps/mcp',
+                         '/backend-api/wham/remote/control/server/pair',
+                         '/auth/oauth/token', '/platform/files', '/telemetry/costs'):
+            request = urllib.request.Request(base + endpoint, data=b'{}', headers={'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(request, timeout=2)
+                raise AssertionError(f'Unauthenticated request accepted: {endpoint}')
+            except urllib.error.HTTPError as error:
+                assert error.code == 401, (endpoint, error.code)
+        try:
+            urllib.request.urlopen(base + '/transfers/unknown-handle', timeout=2)
+            raise AssertionError('Unknown transfer handle accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 404
+        print(f'Container startup, health, auth, model catalog, tools, native routes and transfers passed; {config["Size"] / 1024**2:.1f} MiB')
     finally:
         docker('rm', '-f', container)

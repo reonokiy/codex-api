@@ -1,3 +1,7 @@
+#[path = "cases/files.rs"]
+mod file_cases;
+#[path = "cases/native.rs"]
+mod native_cases;
 mod support;
 use axum::{
     Router,
@@ -171,6 +175,16 @@ impl Harness {
         timeout: Duration,
         login: CodexAuth,
     ) -> Self {
+        Self::with_options(events, status, hang, timeout, login, false).await
+    }
+    async fn with_options(
+        events: Vec<Value>,
+        status: StatusCode,
+        hang: bool,
+        timeout: Duration,
+        login: CodexAuth,
+        transfers: bool,
+    ) -> Self {
         let subscription = login.is_chatgpt_auth();
         let fake = Fake {
             received: Default::default(),
@@ -188,15 +202,53 @@ impl Harness {
         let upstream_url = format!("http://{}", listener.local_addr().unwrap());
         let app = Router::new()
             .route("/responses", post(upstream).get(upstream_ws))
+            .route("/realtime/calls", post(realtime_cases::upstream_call))
+            .route("/realtime", axum::routing::get(upstream_ws))
+            .route(
+                "/live",
+                post(realtime_cases::upstream_call).get(upstream_ws),
+            )
+            .route("/live/{call_id}", axum::routing::get(upstream_ws))
+            .route(
+                "/live/sessions",
+                post(realtime_cases::upstream_call).get(upstream_ws),
+            )
+            .route(
+                "/live/sessions/{session_id}/attach",
+                axum::routing::get(upstream_ws),
+            )
             .route("/alpha/search", post(upstream_search))
             .route("/images/generations", post(upstream_image))
             .route("/images/edits", post(upstream_image))
+            .route("/files", post(file_cases::upstream_file))
+            .route("/files/{file_id}/uploaded", post(file_cases::upstream_file))
+            .route(
+                "/storage/{file_id}",
+                axum::routing::put(file_cases::upstream_file),
+            )
+            .route(
+                "/memories/trace_summarize",
+                post(native_cases::upstream_memory),
+            )
+            .route(
+                "/guardian",
+                post(native_cases::upstream_native).get(upstream_ws),
+            )
+            .route(
+                "/guardian-classifier",
+                post(native_cases::upstream_native).get(upstream_ws),
+            )
+            .route(
+                "/wham/remote/control/server",
+                axum::routing::get(upstream_ws),
+            )
             .route(
                 "/models",
                 axum::routing::get(|| async {
                     axum::Json(codex_models_manager::bundled_models_response().unwrap())
                 }),
             )
+            .fallback(native_cases::upstream_native)
             .with_state(fake.clone());
         let upstream_task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -211,7 +263,9 @@ impl Harness {
             ),
             auth,
             factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            chatgpt_base_url: "https://chatgpt.com/backend-api".into(),
+            chatgpt_base_url: upstream_url.clone(),
+            platform_base_url: upstream_url.clone(),
+            auth_base_url: upstream_url.clone(),
             subscription_only: subscription,
             compression: subscription,
             agent_identity_policy: codex_login::AgentIdentityAuthPolicy::JwtOnly,
@@ -225,15 +279,20 @@ impl Harness {
             .unwrap()
             .slug
             .clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let transfers = transfers.then(|| {
+            codex_api_gateway::transfers::Transfers::new(backend.factory.clone(), &url, timeout)
+                .unwrap()
+        });
         let app = router(Gateway {
             backend,
             models,
             key: Some("client-key".into()),
             concurrency: Arc::new(Semaphore::new(1)),
             timeout,
+            transfers,
         });
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
         let gateway_task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
@@ -1292,3 +1351,6 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
 #[path = "cases/tools.rs"]
 mod tool_cases;
 use tool_cases::{upstream_image, upstream_search};
+
+#[path = "cases/realtime.rs"]
+mod realtime_cases;

@@ -19,6 +19,7 @@ pub struct Gateway {
     pub key: Option<String>,
     pub concurrency: Arc<Semaphore>,
     pub timeout: Duration,
+    pub transfers: Option<crate::transfers::Transfers>,
 }
 
 pub fn router(gateway: Gateway) -> Router {
@@ -28,6 +29,9 @@ pub fn router(gateway: Gateway) -> Router {
             get(|| async { Json(json!({"status":"ok", "codex_release":crate::CODEX_RELEASE, "codex_revision":CODEX_REV})) }),
         )
         .route("/v1/models", get(models))
+        .route("/v1/files", post(crate::files::create))
+        .route("/codex/memories/trace_summarize", post(crate::memories::summarize))
+        .route("/backend-api/codex/memories/trace_summarize", post(crate::memories::summarize))
         .route("/codex/alpha/search", post(crate::search::search))
         .route("/backend-api/codex/alpha/search", post(crate::search::search))
         .route("/v1/images/generations", post(crate::images::generate))
@@ -49,22 +53,45 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/backend-api/codex/models", get(native_models))
         .route("/v1/responses/compact", post(compact))
         .route("/codex/responses/compact", post(compact))
-        .fallback(|| async {
-            (
-                StatusCode::NOT_FOUND,
-                Json(
-                    json!({"error":{"type":"invalid_request_error","message":"unknown endpoint"}}),
-                ),
-            )
-        })
+        .route("/v1/realtime/calls", post(crate::realtime::calls))
+        .route("/codex/realtime/calls", post(crate::realtime::calls))
+        .route("/backend-api/codex/realtime/calls", post(crate::realtime::calls))
+        .route("/v1/realtime", get(crate::realtime::upgrade))
+        .route("/codex/realtime", get(crate::realtime::upgrade))
+        .route("/backend-api/codex/realtime", get(crate::realtime::upgrade))
+        .route("/v1/live", post(crate::realtime::calls).get(crate::realtime::upgrade))
+        .route("/codex/live", post(crate::realtime::calls).get(crate::realtime::upgrade))
+        .route("/backend-api/codex/live", post(crate::realtime::calls).get(crate::realtime::upgrade))
+        .route("/v1/live/{call_id}", get(crate::realtime::upgrade))
+        .route("/codex/live/{call_id}", get(crate::realtime::upgrade))
+        .route("/backend-api/codex/live/{call_id}", get(crate::realtime::upgrade))
+        .route("/v1/live/sessions", post(crate::realtime::calls).get(crate::realtime::upgrade))
+        .route("/v1/live/sessions/{session_id}/attach", get(crate::realtime::upgrade))
+        .route("/transfers/{handle}", axum::routing::any(transfer))
+        .fallback(crate::native::handle)
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
         .with_state(Arc::new(gateway))
+}
+async fn transfer(
+    State(gateway): State<Arc<Gateway>>,
+    axum::extract::Path(handle): axum::extract::Path<String>,
+    request: axum::extract::Request,
+) -> Result<Response, GatewayError> {
+    gateway
+        .transfers
+        .as_ref()
+        .ok_or_else(|| {
+            GatewayError::invalid("configure CODEX_GATEWAY_PUBLIC_URL to enable transfers")
+        })?
+        .serve(&handle, request)
+        .await
 }
 pub(crate) fn authorize(gateway: &Gateway, headers: &HeaderMap) -> Result<(), GatewayError> {
     if let Some(key) = &gateway.key {
         let expected = format!("Bearer {key}");
         let actual = headers
-            .get("authorization")
+            .get("x-codex-gateway-authorization")
+            .or_else(|| headers.get("authorization"))
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         // Compare all equal-length bytes without an early mismatch exit.

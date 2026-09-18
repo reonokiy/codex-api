@@ -30,17 +30,28 @@ assert tomllib.loads((ROOT / 'rust-toolchain.toml').read_text())['toolchain']['c
 original = source / 'codex-rs/codex-api'
 vendor = ROOT / 'vendor/codex-api'
 files = {p.relative_to(original) for p in (original / 'src').rglob('*.rs')}
-assert files == {p.relative_to(vendor) for p in (vendor / 'src').rglob('*.rs')}
+added_source_files = {Path('src/endpoint/raw.rs')}
+assert files | added_source_files == {p.relative_to(vendor) for p in (vendor / 'src').rglob('*.rs')}
 integration_tests = {p.relative_to(original) for p in (original / 'tests').rglob('*.rs')}
-assert integration_tests == {p.relative_to(vendor) for p in (vendor / 'tests').rglob('*.rs')}
+added_integration_tests = {Path('tests/gateway_extensions.rs')}
+assert integration_tests | added_integration_tests == {p.relative_to(vendor) for p in (vendor / 'tests').rglob('*.rs')}
 assert all((original / p).read_bytes() == (vendor / p).read_bytes() for p in integration_tests)
 changed, diff = [], []
-for relative in sorted(files):
-    before, after = (original / relative).read_text(), (vendor / relative).read_text()
+for relative in sorted(files | added_source_files):
+    before = (original / relative).read_text() if relative in files else ''
+    after = (vendor / relative).read_text()
     if before != after:
-        changed.append(str(relative))
-        diff.extend(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile='a/' + str(relative), tofile='b/' + str(relative)))
-assert changed == ['src/endpoint/responses.rs', 'src/endpoint/responses_websocket.rs']
+        if relative in files:
+            changed.append(str(relative))
+        diff.extend(difflib.unified_diff(before.splitlines(True), after.splitlines(True), fromfile='a/' + str(relative) if relative in files else '/dev/null', tofile='b/' + str(relative)))
+assert changed == [
+    'src/endpoint/mod.rs',
+    'src/endpoint/realtime_websocket/methods.rs',
+    'src/endpoint/realtime_websocket/mod.rs',
+    'src/endpoint/responses.rs',
+    'src/endpoint/responses_websocket.rs',
+    'src/lib.rs',
+]
 patch = ''.join(diff).encode()
 assert patch == (ROOT / 'vendor/raw-transport.patch').read_bytes(), 'Regenerate patch after source changes'
 report = {
@@ -51,6 +62,8 @@ report = {
     'identical_source_files': len(files) - len(changed),
     'identical_integration_test_files': len(integration_tests),
     'changed_source_files': changed,
+    'added_source_files': sorted(str(p) for p in added_source_files),
+    'added_integration_test_files': sorted(str(p) for p in added_integration_tests),
     'patch_sha256': hashlib.sha256(patch).hexdigest(),
     'sse_parser_unchanged': True,
 }

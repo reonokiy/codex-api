@@ -2,11 +2,11 @@
 use crate::{
     error::GatewayError,
     server::Gateway,
-    standalone::{self, ToolRequest, extraction_error},
+    standalone::{self, ToolRequest},
 };
 use axum::{
     extract::{Request, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::Response,
 };
 use codex_api::{
@@ -56,18 +56,7 @@ pub async fn search(
     headers: HeaderMap,
     request: Request,
 ) -> Result<Response, GatewayError> {
-    let is_json = headers
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(';').next())
-        .is_some_and(|v| v.trim() == "application/json");
     standalone::handle(gateway, headers, async move {
-        if !is_json {
-            return Err(extraction_error(
-                StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                "use application/json",
-            ));
-        }
         let input: Input = standalone::json(request).await?;
         if input.id.trim().is_empty() || input.model.trim().is_empty() {
             return Err(GatewayError::invalid(

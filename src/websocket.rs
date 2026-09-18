@@ -13,7 +13,6 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
-use codex_websocket_client::WebSocketConnection;
 use futures::{SinkExt, StreamExt};
 use std::{sync::Arc, time::Duration};
 use tokio_tungstenite::tungstenite::Message as Upstream;
@@ -64,14 +63,16 @@ pub async fn upgrade(
     Ok(response)
 }
 
-async fn relay(
+pub(crate) async fn relay<S, E>(
     mut client: WebSocket,
-    mut upstream: WebSocketConnection,
+    mut upstream: S,
     idle: Duration,
     public: bool,
     models: &[codex_protocol::openai_models::ModelInfo],
     session: &str,
-) {
+) where
+    S: futures::Stream<Item = Result<Upstream, E>> + futures::Sink<Upstream> + Unpin,
+{
     let mut accumulator = crate::output::OutputAccumulator::default();
     loop {
         let step = async {

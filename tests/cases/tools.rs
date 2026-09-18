@@ -164,6 +164,10 @@ async fn images_accept_sdk_multipart_without_touching_the_filesystem() {
         format!("data:image/png;base64,{IMAGE_PNG}")
     );
     assert_eq!(body["n"], 1);
+    assert_eq!(body["background"], "auto");
+    assert_eq!(body["quality"], "auto");
+    assert_eq!(body["size"], "auto");
+
     assert!(body.get("response_format").is_none());
     assert_eq!(h.fake.image_paths.lock().unwrap()[0], "/images/edits");
 }
@@ -640,4 +644,33 @@ async fn image_uploads_enforce_body_limit_and_reject_duplicate_fields() {
         assert_eq!(response.status(), 400);
     }
     assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn standalone_tools_share_concurrency_slots() {
+    let h = Harness::new(events(), StatusCode::OK, true, Duration::from_secs(1)).await;
+    let image = reqwest::Client::new()
+        .post(format!("{}/v1/images/generations", h.url))
+        .bearer_auth("client-key")
+        .json(&json!({"prompt":"x"}));
+    let pending = tokio::spawn(async move { image.send().await });
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while h.fake.received.lock().unwrap().is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("image request did not reach upstream");
+    let result = reqwest::Client::new()
+        .post(format!("{}/codex/alpha/search", h.url))
+        .bearer_auth("client-key")
+        .json(&json!({"id":"search-1","model":"gpt-5.5","commands":{"time":[{"utc_offset":"+00:00"}]}}))
+        .send().await.unwrap();
+    pending.abort();
+    assert_eq!(result.status(), 429);
+    assert_eq!(
+        result.json::<Value>().await.unwrap()["error"]["code"],
+        "gateway_busy"
+    );
+    assert_eq!(h.fake.received.lock().unwrap().len(), 1);
 }

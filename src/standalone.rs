@@ -17,6 +17,7 @@ pub enum ToolRequest {
     Generate(codex_api::ImageGenerationRequest),
     Edit(codex_api::ImageEditRequest),
     Search(Box<codex_api::SearchRequest>),
+    Memory(serde_json::Value),
 }
 impl ToolRequest {
     pub fn path(&self) -> &'static str {
@@ -24,6 +25,7 @@ impl ToolRequest {
             Self::Generate(_) => "images/generations",
             Self::Edit(_) => "images/edits",
             Self::Search(_) => "alpha/search",
+            Self::Memory(_) => "memories/trace_summarize",
         }
     }
 }
@@ -66,6 +68,18 @@ pub async fn handle(
 }
 
 pub async fn json<T: serde::de::DeserializeOwned>(request: Request) -> Result<T, GatewayError> {
+    let is_json = request
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(';').next())
+        .is_some_and(|v| v.trim() == "application/json");
+    if !is_json {
+        return Err(extraction_error(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "use application/json",
+        ));
+    }
     let bytes = Bytes::from_request(request, &())
         .await
         .map_err(|e| extraction_error(e.status(), e.body_text()))?;

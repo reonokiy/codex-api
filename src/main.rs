@@ -48,6 +48,13 @@ async fn main() -> anyhow::Result<()> {
     };
     let backend = load_backend(home).await?;
     let models = codex_models_manager::bundled_models_response()?.models;
+    let timeout = Duration::from_secs(args.timeout_seconds);
+    let transfers = std::env::var("CODEX_GATEWAY_PUBLIC_URL")
+        .ok()
+        .map(|url| {
+            codex_api_gateway::transfers::Transfers::new(backend.factory.clone(), &url, timeout)
+        })
+        .transpose()?;
     let gateway = Gateway {
         backend,
         models,
@@ -55,7 +62,8 @@ async fn main() -> anyhow::Result<()> {
         concurrency: Arc::new(tokio::sync::Semaphore::new(usize::from(
             args.max_concurrency,
         ))),
-        timeout: Duration::from_secs(args.timeout_seconds),
+        timeout,
+        transfers,
     };
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
     tracing::info!(listen=%listener.local_addr()?, "Codex Responses gateway ready");
