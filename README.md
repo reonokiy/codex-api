@@ -4,6 +4,22 @@
 
 实现与对照 CLI 固定为 **Codex 0.155.0**，Rust **1.95.0**。版本、commit 和发行包校验值见 [版本锁文件](baseline/codex-release.lock.json)。
 
+## 容器运行
+
+镜像：`ghcr.io/reonokiy/codex-api:latest`（`linux/amd64`）。基于 `scratch`，仅包含程序、必要动态库和 CA 证书。
+
+```sh
+export CODEX_GATEWAY_API_KEY='your-gateway-key'
+docker run -d --name codex-api --restart unless-stopped \
+  --user "$(id -u):$(id -g)" \
+  -p 127.0.0.1:8080:8080 \
+  -e CODEX_GATEWAY_API_KEY \
+  -v "$HOME/.codex:/data" \
+  ghcr.io/reonokiy/codex-api:latest
+```
+
+先在宿主机执行 `codex login`，挂载的登录目录需可写，以保存刷新后的凭据。Actions 在推送 `main` 时更新 `latest`，推送 `v*` 标签时发布同名镜像，也保留 `sha-<commit>` 标签；PR 只构建和测试。
+
 ## 启动
 
 先用 Codex 完成订阅登录，然后启动网关：

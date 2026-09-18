@@ -1,0 +1,13 @@
+**
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!clippy.toml
+!.cargo
+!.cargo/**
+!src
+!src/**
+!vendor
+!vendor/**
+!LICENSE
+!NOTICE
