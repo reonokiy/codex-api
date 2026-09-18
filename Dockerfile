@@ -24,6 +24,10 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && printf 'gateway:x:65532:65532:Gateway:/data:/sbin/nologin\n' > /rootfs/etc/passwd \
     && printf 'gateway:x:65532:\n' > /rootfs/etc/group
 COPY LICENSE NOTICE /rootfs/usr/share/licenses/codex-api/
+RUN for package in libc6 libgcc-s1 libssl3 zlib1g ca-certificates; do \
+      install -Dm644 "/usr/share/doc/$package/copyright" \
+        "/rootfs/usr/share/licenses/$package/copyright"; \
+    done
 
 FROM scratch
 COPY --from=build /rootfs /
