@@ -28,6 +28,14 @@ pub fn router(gateway: Gateway) -> Router {
             get(|| async { Json(json!({"status":"ok", "codex_release":crate::CODEX_RELEASE, "codex_revision":CODEX_REV})) }),
         )
         .route("/v1/models", get(models))
+        .route("/codex/alpha/search", post(crate::search::search))
+        .route("/backend-api/codex/alpha/search", post(crate::search::search))
+        .route("/v1/images/generations", post(crate::images::generate))
+        .route("/v1/images/edits", post(crate::images::edit))
+        .route("/codex/images/generations", post(crate::images::generate))
+        .route("/codex/images/edits", post(crate::images::edit))
+        .route("/backend-api/codex/images/generations", post(crate::images::generate))
+        .route("/backend-api/codex/images/edits", post(crate::images::edit))
         .route("/v1/responses", post(create).get(crate::websocket::upgrade))
         .route(
             "/codex/responses",
@@ -246,6 +254,7 @@ pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap {
         "x-codex-installation-id",
         "x-codex-routing-hint",
         "x-codex-turn-state",
+        "x-codex-image-turn-id",
         "x-codex-turn-metadata",
         "x-codex-parent-thread-id",
         "x-codex-window-id",

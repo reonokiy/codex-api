@@ -12,14 +12,16 @@ tokio-tungstenite = "0.28"
 zstd = "0.13"
 anyhow = "1"
 async-stream = "0.3.6"
-axum = { version = "0.8", features = ["json", "http1", "tokio", "ws"] }
+axum = { version = "0.8", features = ["json", "http1", "tokio", "ws", "multipart"] }
 bytes = "1"
+base64 = "0.22.1"
 clap = { version = "4", features = ["derive", "env"] }
 eventsource-stream = "0.2.3"
 futures = "0.3"
 http = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
+serde_ignored = "=0.1.14"
 tokio = { version = "1", features = ["full"] }
 toml = "0.9.5"
 tracing = "0.1"
@@ -43,7 +45,7 @@ codex-tools = { git = "https://github.com/openai/codex.git", rev = "f0a1b8f0849d
 codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "f0a1b8f0849d90960bc406b848f32e5a129b0457" }
 
 [dev-dependencies]
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 tempfile = "3"
 
 # Cargo does not inherit dependency workspace patches; these match Codex.

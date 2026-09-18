@@ -69,58 +69,25 @@ impl CreateResponse {
                 "Codex uses tool_choice=auto; other choices are not supported",
             ));
         }
-        if self
-            .include
-            .as_ref()
-            .is_some_and(|values| values.iter().any(|v| v != "reasoning.encrypted_content"))
-        {
+        if self.include.as_ref().is_some_and(|values| {
+            values.iter().any(|v| {
+                ![
+                    "reasoning.encrypted_content",
+                    "web_search_call.action.sources",
+                    "web_search_call.results",
+                ]
+                .contains(&v.as_str())
+            })
+        }) {
             return Err(GatewayError::invalid(
-                "only reasoning.encrypted_content is supported in include",
+                "include supports reasoning.encrypted_content, web_search_call.action.sources and web_search_call.results",
             ));
         }
-        let mut tool_specs = Vec::new();
-        for tool in &self.tools {
-            if tool.get("type").and_then(Value::as_str) != Some("function")
-                || tool
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .is_none_or(str::is_empty)
-                || !tool.get("parameters").is_some_and(Value::is_object)
-            {
-                return Err(GatewayError::invalid(
-                    "tools must be Responses function definitions with name and parameters",
-                ));
-            }
-            if tool.as_object().is_some_and(|o| {
-                o.keys().any(|k| {
-                    !["type", "name", "description", "parameters", "strict"].contains(&k.as_str())
-                })
-            }) {
-                return Err(GatewayError::invalid("unsupported function tool field"));
-            }
-            let strict = match tool.get("strict") {
-                None => false,
-                Some(Value::Bool(value)) => *value,
-                _ => return Err(GatewayError::invalid("tool.strict must be a boolean")),
-            };
-            let description = match tool.get("description") {
-                None => String::new(),
-                Some(Value::String(value)) => value.clone(),
-                _ => return Err(GatewayError::invalid("tool.description must be a string")),
-            };
-            let parameters = codex_tools::parse_tool_input_schema(&tool["parameters"])
-                .map_err(|e| GatewayError::invalid(format!("invalid tool schema: {e}")))?;
-            tool_specs.push(codex_tools::ToolSpec::Function(
-                codex_tools::ResponsesApiTool {
-                    name: tool["name"].as_str().unwrap().to_owned(),
-                    description,
-                    strict,
-                    defer_loading: None,
-                    parameters,
-                    output_schema: None,
-                },
-            ));
-        }
+        let tool_specs = self
+            .tools
+            .iter()
+            .map(crate::tools::parse)
+            .collect::<Result<Vec<_>, _>>()?;
         let mut input = normalize_input(self.input)?;
         let reasoning_input = self.reasoning;
         let effort = reasoning_input
@@ -233,6 +200,10 @@ impl CreateResponse {
                     .into(),
             )
         };
+        let mut include = self.include.unwrap_or_default();
+        if !include.iter().any(|v| v == "reasoning.encrypted_content") {
+            include.push("reasoning.encrypted_content".into());
+        }
         Ok(ResponsesApiRequest {
             model: model.slug.clone(),
             instructions,
@@ -245,7 +216,7 @@ impl CreateResponse {
             store: false,
             stream: true,
             stream_options: None,
-            include: vec!["reasoning.encrypted_content".into()],
+            include,
             service_tier: model.service_tier_for_request(self.service_tier),
             prompt_cache_key: Some(
                 self.prompt_cache_key
@@ -304,7 +275,8 @@ fn normalize_input(value: Value) -> Result<Vec<ResponseItem>, GatewayError> {
                 | ResponseItem::CompactionTrigger { .. }
                 | ResponseItem::ContextCompaction { .. }
                 | ResponseItem::CustomToolCall { .. }
-                | ResponseItem::CustomToolCallOutput { .. } => Ok(parsed),
+                | ResponseItem::CustomToolCallOutput { .. }
+                | ResponseItem::WebSearchCall { .. } => Ok(parsed),
                 _ => Err(GatewayError::invalid("unsupported input item type")),
             }
         })

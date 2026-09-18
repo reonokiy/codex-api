@@ -31,6 +31,9 @@ struct Fake {
     ws_frames: Arc<Mutex<Vec<String>>>,
     http_bodies: Arc<Mutex<Vec<Vec<u8>>>>,
     ws_connections: Arc<std::sync::atomic::AtomicUsize>,
+    image_paths: Arc<Mutex<Vec<String>>>,
+    cli_image_path: Arc<Mutex<Option<String>>>,
+    cli_turn: Arc<std::sync::atomic::AtomicUsize>,
 }
 async fn upstream(State(fake): State<Fake>, headers: HeaderMap, bytes: Bytes) -> Response {
     fake.http_bodies.lock().unwrap().push(bytes.to_vec());
@@ -48,7 +51,20 @@ async fn upstream(State(fake): State<Fake>, headers: HeaderMap, bytes: Bytes) ->
             .unwrap();
     }
     let mut wire = String::new();
-    for event in &fake.events {
+    let cli_path = fake.cli_image_path.lock().unwrap().clone();
+    let cli_events = cli_path.map(|path| {
+        let turn = fake.cli_turn.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if turn > 2 { return events(); }
+        if turn == 2 {
+            let call = json!({"type":"function_call","id":"fc_web_2","call_id":"call_web_2","namespace":"web","name":"run","arguments":json!({"search_query":[{"q":"Codex"}]}).to_string()});
+            return vec![json!({"type":"response.output_item.done","output_index":0,"item":call}),completed(vec![call])];
+        }
+        let args = if turn == 0 { json!({"prompt":"Generate a tiny white square"}) }
+            else { json!({"prompt":"Make the square blue","referenced_image_paths":[path]}) };
+        let call = json!({"type":"function_call","id":format!("fc_image_{turn}"),"call_id":format!("call_image_{turn}"),"namespace":"image_gen","name":"imagegen","arguments":args.to_string(),"status":"completed"});
+        vec![json!({"type":"response.output_item.done","output_index":0,"item":call}), completed(vec![call])]
+    });
+    for event in cli_events.as_ref().unwrap_or(&fake.events) {
         wire.push_str(&format!(
             "event: {}\ndata: {event}\n\n",
             event["type"].as_str().unwrap()
@@ -164,11 +180,17 @@ impl Harness {
             ws_frames: Default::default(),
             http_bodies: Default::default(),
             ws_connections: Default::default(),
+            image_paths: Default::default(),
+            cli_image_path: Default::default(),
+            cli_turn: Default::default(),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_url = format!("http://{}", listener.local_addr().unwrap());
         let app = Router::new()
             .route("/responses", post(upstream).get(upstream_ws))
+            .route("/alpha/search", post(upstream_search))
+            .route("/images/generations", post(upstream_image))
+            .route("/images/edits", post(upstream_image))
             .route(
                 "/models",
                 axum::routing::get(|| async {
@@ -1266,3 +1288,7 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
     let first = std::fs::read(directory.join("0-request.tcp")).unwrap();
     assert!(first.starts_with(b"GET /models?client_version=0.155.0 HTTP/1.1\r\n"));
 }
+
+#[path = "cases/tools.rs"]
+mod tool_cases;
+use tool_cases::{upstream_image, upstream_search};

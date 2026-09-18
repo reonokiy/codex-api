@@ -61,6 +61,16 @@ with tempfile.TemporaryDirectory() as home:
             assert error.code == 401
         request = urllib.request.Request(base + '/v1/models', headers={'Authorization': 'Bearer container-test-key'})
         assert json.load(urllib.request.urlopen(request, timeout=2))['data']
-        print(f'Container startup, health, authentication and model catalog passed; {config["Size"] / 1024**2:.1f} MiB')
+        for endpoint in ('/v1/images/generations', '/v1/images/edits',
+                         '/backend-api/codex/images/generations', '/codex/images/edits',
+                         '/codex/alpha/search', '/backend-api/codex/alpha/search'):
+            request = urllib.request.Request(base + endpoint, data=b'{"prompt":""}', headers={
+                'Authorization': 'Bearer container-test-key', 'Content-Type': 'application/json'})
+            try:
+                urllib.request.urlopen(request, timeout=2)
+                raise AssertionError('Invalid image request accepted')
+            except urllib.error.HTTPError as error:
+                assert error.code == 400
+        print(f'Container startup, health, authentication, model catalog and standalone tool routes passed; {config["Size"] / 1024**2:.1f} MiB')
     finally:
         docker('rm', '-f', container)

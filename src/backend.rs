@@ -175,6 +175,86 @@ impl Backend {
         }
     }
 
+    /// Standalone tools use the same provider/auth entry points as Codex extensions.
+    pub async fn standalone(
+        &self,
+        request: &crate::standalone::ToolRequest,
+        headers: http::HeaderMap,
+    ) -> Result<(http::HeaderMap, bytes::Bytes), GatewayError> {
+        let mut recovery = self.auth.unauthorized_recovery();
+        let original = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+        let account = (original.get_account_id(), original.get_chatgpt_user_id());
+        let changes = self.auth.auth_change_receiver();
+        loop {
+            let revision = *changes.borrow();
+            let auth = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+            if (self.subscription_only && !auth.is_chatgpt_auth())
+                || (auth.get_account_id(), auth.get_chatgpt_user_id()) != account
+            {
+                return Err(GatewayError::auth());
+            }
+            let provider = self
+                .provider
+                .api_provider()
+                .await
+                .map_err(GatewayError::internal)?;
+            let api_auth = self
+                .provider
+                .api_auth()
+                .await
+                .map_err(GatewayError::internal)?;
+            if *changes.borrow() != revision {
+                continue;
+            }
+            let http = create_client_for_route(
+                &self.factory,
+                &provider.url_for_path(request.path()),
+                ClientRouteClass::Api,
+            )
+            .map_err(GatewayError::internal)?;
+            let captured = Arc::new(OnceLock::new());
+            let transport = crate::transport::StandaloneTransport {
+                inner: ReqwestTransport::from_http_client(http),
+                response: captured.clone(),
+            };
+            use crate::standalone::ToolRequest;
+            let result = match request {
+                ToolRequest::Generate(request) => {
+                    codex_api::ImagesClient::new(transport, provider, api_auth)
+                        .generate(request, headers.clone())
+                        .await
+                        .map(|_| ())
+                }
+                ToolRequest::Edit(request) => {
+                    codex_api::ImagesClient::new(transport, provider, api_auth)
+                        .edit(request, headers.clone())
+                        .await
+                        .map(|_| ())
+                }
+                ToolRequest::Search(request) => {
+                    codex_api::SearchClient::new(transport, provider, api_auth)
+                        .search(request, headers.clone())
+                        .await
+                        .map(|_| ())
+                }
+            };
+            match result {
+                Ok(_) => {
+                    return captured
+                        .get()
+                        .cloned()
+                        .ok_or_else(|| GatewayError::internal("missing standalone tool response"));
+                }
+                Err(ApiError::Transport(ref error))
+                    if self.provider.is_recoverable_auth_error(error) && recovery.has_next() =>
+                {
+                    recovery.next().await.map_err(|_| GatewayError::auth())?;
+                }
+                Err(error) => return Err(GatewayError::from_api(error)),
+            }
+        }
+    }
+
     async fn start_inner(
         &self,
         adapted: Option<(ResponsesApiRequest, String)>,

@@ -86,26 +86,52 @@ pub struct ModelCatalogTransport {
 }
 impl HttpTransport for ModelCatalogTransport {
     async fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        let mut response = self.inner.stream(request).await?;
-        let mut body = Vec::new();
-        while let Some(chunk) = response.bytes.next().await {
-            let chunk = chunk?;
-            if body.len().saturating_add(chunk.len()) > 16 * 1024 * 1024 {
-                return Err(TransportError::Network(
-                    "model catalog exceeded 16 MiB".into(),
-                ));
-            }
-            body.extend_from_slice(&chunk);
-        }
-        let body = Bytes::from(body);
-        let _ = self.body.set(body.clone());
-        Ok(Response {
-            status: response.status,
-            headers: response.headers,
-            body,
-        })
+        let response =
+            collect_response(self.inner.stream(request).await?, 16 * 1024 * 1024).await?;
+        let _ = self.body.set(response.body.clone());
+        Ok(response)
     }
     async fn stream(&self, request: Request) -> Result<StreamResponse, TransportError> {
         self.inner.stream(request).await
     }
+}
+
+/// Keep the full response while the original standalone client validates its schema.
+pub struct StandaloneTransport {
+    pub inner: codex_api::ReqwestTransport,
+    pub response: std::sync::Arc<std::sync::OnceLock<(http::HeaderMap, Bytes)>>,
+}
+impl HttpTransport for StandaloneTransport {
+    async fn execute(&self, request: Request) -> Result<Response, TransportError> {
+        let response =
+            collect_response(self.inner.stream(request).await?, MAX_RESPONSE_BYTES).await?;
+        let _ = self
+            .response
+            .set((response.headers.clone(), response.body.clone()));
+        Ok(response)
+    }
+    async fn stream(&self, request: Request) -> Result<StreamResponse, TransportError> {
+        self.inner.stream(request).await
+    }
+}
+
+async fn collect_response(
+    mut response: StreamResponse,
+    limit: usize,
+) -> Result<Response, TransportError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.bytes.next().await {
+        let chunk = chunk?;
+        if body.len().saturating_add(chunk.len()) > limit {
+            return Err(TransportError::Network(format!(
+                "upstream response exceeded {limit} bytes"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Response {
+        status: response.status,
+        headers: response.headers,
+        body: Bytes::from(body),
+    })
 }
