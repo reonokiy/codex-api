@@ -1,0 +1,8 @@
+/target/
+/.cache/
+/artifacts/
+/.agents/
+/.codex/
+.env
+.env.*
+auth.json

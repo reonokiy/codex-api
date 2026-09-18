@@ -1,0 +1,114 @@
+--- a/src/endpoint/responses.rs
++++ b/src/endpoint/responses.rs
+@@ -152,6 +152,20 @@
+             .await
+     }
+ 
++    /// Gateway extension: retain original JSON key order and lexical values.
++    pub async fn stream_raw_json(
++        &self,
++        body: &serde_json::value::RawValue,
++        extra_headers: HeaderMap,
++        compression: Compression,
++        turn_state: Option<Arc<OnceLock<String>>>,
++    ) -> Result<ResponseStream, ApiError> {
++        let body = EncodedJsonBody::encode(body)
++            .map_err(|e| ApiError::Stream(format!("failed to encode responses request: {e}")))?;
++        self.stream_encoded(body, extra_headers, compression, turn_state)
++            .await
++    }
++
+     async fn stream_encoded(
+         &self,
+         body: EncodedJsonBody,
+--- a/src/endpoint/responses_websocket.rs
++++ b/src/endpoint/responses_websocket.rs
+@@ -423,6 +423,24 @@
+         ))
+     }
+ 
++    /// Gateway extension: expose the original handshake without the lossy event adapter.
++    /// All URL/header/auth/TLS/compression logic is shared with `connect`.
++    pub async fn connect_raw(
++        &self,
++        http_client_factory: &HttpClientFactory,
++        extra_headers: HeaderMap,
++        default_headers: HeaderMap,
++    ) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
++        let url = self
++            .provider
++            .websocket_url_for_path(self.endpoint.path())
++            .map_err(|err| ApiError::Stream(format!("failed to build websocket URL: {err}")))?;
++        let mut headers =
++            merge_request_headers(&self.provider.headers, extra_headers, default_headers);
++        self.auth.add_auth_headers(&mut headers);
++        connect_websocket_raw(url, headers, http_client_factory).await
++    }
++
+     /// Opens a WebSocket connection long enough to validate the upgrade response.
+     ///
+     /// The probe uses the same URL construction, headers, authentication, TLS,
+@@ -508,6 +526,35 @@
+     http_client_factory: &HttpClientFactory,
+     turn_state: Option<Arc<OnceLock<String>>>,
+ ) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
++    let (stream, response) = connect_websocket_raw(url, headers, http_client_factory).await?;
++
++    let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
++    let server_model = response
++        .headers()
++        .get(OPENAI_MODEL_HEADER)
++        .and_then(|value| value.to_str().ok())
++        .map(ToString::to_string);
++    if let Some(turn_state) = turn_state
++        && let Some(header_value) = response
++            .headers()
++            .get(X_CODEX_TURN_STATE_HEADER)
++            .and_then(|value| value.to_str().ok())
++    {
++        let _ = turn_state.set(header_value.to_string());
++    }
++    Ok((
++        WsStream::new(stream),
++        response.status(),
++        reasoning_included,
++        server_model,
++    ))
++}
++
++async fn connect_websocket_raw(
++    url: Url,
++    headers: HeaderMap,
++    http_client_factory: &HttpClientFactory,
++) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
+     info!("connecting to websocket: {url}");
+ 
+     let mut request = url
+@@ -534,26 +581,7 @@
+         }
+     };
+ 
+-    let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
+-    let server_model = response
+-        .headers()
+-        .get(OPENAI_MODEL_HEADER)
+-        .and_then(|value| value.to_str().ok())
+-        .map(ToString::to_string);
+-    if let Some(turn_state) = turn_state
+-        && let Some(header_value) = response
+-            .headers()
+-            .get(X_CODEX_TURN_STATE_HEADER)
+-            .and_then(|value| value.to_str().ok())
+-    {
+-        let _ = turn_state.set(header_value.to_string());
+-    }
+-    Ok((
+-        WsStream::new(stream),
+-        response.status(),
+-        reasoning_included,
+-        server_model,
+-    ))
++    Ok((stream, response))
+ }
+ 
+ fn websocket_config() -> WebSocketConfig {

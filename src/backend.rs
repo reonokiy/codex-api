@@ -1,0 +1,307 @@
+use crate::{
+    error::GatewayError,
+    transport::{TapTransport, WireEvent},
+};
+use codex_api::{
+    ApiError, Compression, ReqwestTransport, ResponsesApiRequest, ResponsesClient, ResponsesOptions,
+};
+use codex_http_client::{ClientRouteClass, HttpClientFactory};
+use codex_login::{AuthManager, default_client::create_client_for_route};
+use codex_model_provider::SharedModelProvider;
+use codex_protocol::protocol::SessionSource;
+use futures::StreamExt;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::{mpsc, oneshot};
+
+pub struct Backend {
+    pub provider: SharedModelProvider,
+    pub auth: Arc<AuthManager>,
+    pub factory: HttpClientFactory,
+    pub chatgpt_base_url: String,
+    pub subscription_only: bool,
+    pub compression: bool,
+    pub agent_identity_policy: codex_login::AgentIdentityAuthPolicy,
+}
+
+pub struct RunningResponse {
+    pub events: mpsc::Receiver<WireEvent>,
+    pub finished: oneshot::Receiver<Result<(), String>>,
+    pub headers: http::HeaderMap,
+    observer: tokio::task::JoinHandle<()>,
+}
+impl Drop for RunningResponse {
+    fn drop(&mut self) {
+        self.observer.abort();
+    }
+}
+
+impl Backend {
+    pub async fn start(
+        &self,
+        request: ResponsesApiRequest,
+        session_id: String,
+    ) -> Result<RunningResponse, GatewayError> {
+        self.start_inner(Some((request, session_id)), None).await
+    }
+
+    /// Use Codex's raw JSON entry point so native tools and future fields survive.
+    pub async fn start_native(
+        &self,
+        body: Box<serde_json::value::RawValue>,
+        headers: http::HeaderMap,
+    ) -> Result<RunningResponse, GatewayError> {
+        self.start_inner(None, Some((body, headers))).await
+    }
+
+    pub async fn connect_websocket(
+        &self,
+        headers: http::HeaderMap,
+    ) -> Result<(codex_websocket_client::WebSocketConnection, http::HeaderMap), GatewayError> {
+        let mut recovery = self.auth.unauthorized_recovery();
+        let original = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+        let account = (original.get_account_id(), original.get_chatgpt_user_id());
+        let changes = self.auth.auth_change_receiver();
+        let fallback = codex_model_provider::AgentIdentitySessionFallback::default();
+        loop {
+            let revision = *changes.borrow();
+            let auth = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+            if (self.subscription_only && !auth.is_chatgpt_auth())
+                || (auth.get_account_id(), auth.get_chatgpt_user_id()) != account
+            {
+                return Err(GatewayError::auth());
+            }
+            let resolved = self
+                .provider
+                .api_provider()
+                .await
+                .map_err(GatewayError::internal)?;
+            let api_auth = self
+                .provider
+                .api_auth_for_scope(codex_model_provider::ProviderAuthScope {
+                    agent_identity_policy: self.agent_identity_policy,
+                    session_source: SessionSource::Exec,
+                    agent_identity_session_fallback: fallback.clone(),
+                })
+                .await
+                .map_err(GatewayError::internal)?
+                .auth;
+            if *changes.borrow() != revision {
+                continue;
+            }
+            let client = codex_api::ResponsesWebsocketClient::new(resolved, api_auth);
+            match client
+                .connect_raw(
+                    &self.factory,
+                    headers.clone(),
+                    codex_login::default_client::default_headers(),
+                )
+                .await
+            {
+                Ok((socket, response)) => return Ok((socket, response.headers().clone())),
+                Err(ApiError::Transport(ref e))
+                    if self.provider.is_recoverable_auth_error(e) && recovery.has_next() =>
+                {
+                    recovery.next().await.map_err(|_| GatewayError::auth())?;
+                }
+                Err(e) => return Err(GatewayError::from_api(e)),
+            }
+        }
+    }
+
+    pub async fn models(
+        &self,
+        version: &str,
+        headers: http::HeaderMap,
+    ) -> Result<(bytes::Bytes, Option<String>), GatewayError> {
+        let mut recovery = self.auth.unauthorized_recovery();
+        let original = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+        let account = (original.get_account_id(), original.get_chatgpt_user_id());
+        let changes = self.auth.auth_change_receiver();
+        loop {
+            let revision = *changes.borrow();
+            let auth = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+            if (self.subscription_only && !auth.is_chatgpt_auth())
+                || (auth.get_account_id(), auth.get_chatgpt_user_id()) != account
+            {
+                return Err(GatewayError::auth());
+            }
+            let resolved = self
+                .provider
+                .api_provider()
+                .await
+                .map_err(GatewayError::internal)?;
+            let api_auth = self
+                .provider
+                .api_auth_for_scope(codex_model_provider::ProviderAuthScope {
+                    agent_identity_policy: self.agent_identity_policy,
+                    session_source: SessionSource::Exec,
+                    agent_identity_session_fallback: Default::default(),
+                })
+                .await
+                .map_err(GatewayError::internal)?
+                .auth;
+            if *changes.borrow() != revision {
+                continue;
+            }
+            let url = codex_api::ModelsClient::<ReqwestTransport>::request_url(&resolved, version);
+            let http = create_client_for_route(&self.factory, &url, ClientRouteClass::Api)
+                .map_err(GatewayError::internal)?;
+            let catalog = Arc::new(OnceLock::new());
+            let client = codex_api::ModelsClient::new(
+                crate::transport::ModelCatalogTransport {
+                    inner: ReqwestTransport::from_http_client(http),
+                    body: catalog.clone(),
+                },
+                resolved,
+                api_auth,
+            );
+            match client.list_models(url, headers.clone()).await {
+                Ok((_, etag)) => {
+                    return Ok((
+                        catalog
+                            .get()
+                            .cloned()
+                            .ok_or_else(|| GatewayError::internal("missing model catalog"))?,
+                        etag,
+                    ));
+                }
+                Err(ApiError::Transport(ref e))
+                    if self.provider.is_recoverable_auth_error(e) && recovery.has_next() =>
+                {
+                    recovery.next().await.map_err(|_| GatewayError::auth())?;
+                }
+                Err(e) => return Err(GatewayError::from_api(e)),
+            }
+        }
+    }
+
+    async fn start_inner(
+        &self,
+        adapted: Option<(ResponsesApiRequest, String)>,
+        native: Option<(Box<serde_json::value::RawValue>, http::HeaderMap)>,
+    ) -> Result<RunningResponse, GatewayError> {
+        let mut recovery = self.auth.unauthorized_recovery();
+        let original = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+        let account = (original.get_account_id(), original.get_chatgpt_user_id());
+        let auth_changes = self.auth.auth_change_receiver();
+        let fallback = codex_model_provider::AgentIdentitySessionFallback::default();
+        loop {
+            let revision = *auth_changes.borrow();
+            let auth = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
+            if self.subscription_only && !auth.is_chatgpt_auth() {
+                return Err(GatewayError::auth());
+            }
+            if (auth.get_account_id(), auth.get_chatgpt_user_id()) != account {
+                return Err(GatewayError::auth());
+            }
+            let resolved = self
+                .provider
+                .api_provider()
+                .await
+                .map_err(GatewayError::internal)?;
+            let api_auth = self
+                .provider
+                .api_auth_for_scope(codex_model_provider::ProviderAuthScope {
+                    agent_identity_policy: self.agent_identity_policy,
+                    session_source: SessionSource::Exec,
+                    agent_identity_session_fallback: fallback.clone(),
+                })
+                .await
+                .map_err(GatewayError::internal)?
+                .auth;
+            if *auth_changes.borrow() != revision {
+                continue;
+            }
+            let http = create_client_for_route(
+                &self.factory,
+                &resolved.url_for_path("/responses"),
+                ClientRouteClass::Api,
+            )
+            .map_err(GatewayError::internal)?;
+            let (sender, receiver) = mpsc::channel(8);
+            let response_headers = Arc::new(OnceLock::new());
+            let transport = TapTransport {
+                response_headers: response_headers.clone(),
+                inner: ReqwestTransport::from_http_client(http),
+                sender,
+            };
+            let client = ResponsesClient::new(transport, resolved, api_auth);
+            let compression = if self.compression && auth.uses_codex_backend() {
+                Compression::Zstd
+            } else {
+                Compression::None
+            };
+            let result = if let Some((body, headers)) = &native {
+                client
+                    .stream_raw_json(
+                        body,
+                        headers.clone(),
+                        compression,
+                        Some(Arc::new(OnceLock::new())),
+                    )
+                    .await
+            } else {
+                let (request, session_id) = adapted.as_ref().expect("one request variant");
+                let mut headers = http::HeaderMap::new();
+                let routing_hint = match &request.service_tier {
+                    Some(tier) => format!("model={};tier={tier}", request.model),
+                    None => format!("model={}", request.model),
+                };
+                headers.insert(
+                    "x-codex-routing-hint",
+                    http::HeaderValue::from_str(&routing_hint).map_err(GatewayError::internal)?,
+                );
+                let options = ResponsesOptions {
+                    session_id: Some(session_id.clone()),
+                    thread_id: Some(session_id.clone()),
+                    session_source: Some(SessionSource::Exec),
+                    extra_headers: headers,
+                    compression,
+                    turn_state: Some(Arc::new(OnceLock::new())),
+                };
+                client.stream_request(request.clone(), options).await
+            };
+            // Drop the client so only the active byte stream holds the raw-event sender.
+            drop(client);
+            match result {
+                Ok(mut parsed) => {
+                    let (finished_tx, finished) = oneshot::channel();
+                    let observer = tokio::spawn(async move {
+                        let mut completed = false;
+                        while let Some(event) = parsed.next().await {
+                            match event {
+                                Ok(codex_api::ResponseEvent::Completed { .. }) => {
+                                    completed = true;
+                                    break;
+                                }
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let _ = finished_tx.send(Err(e.to_string()));
+                                    return;
+                                }
+                            }
+                        }
+                        let result = if completed {
+                            Ok(())
+                        } else {
+                            Err("stream closed before response.completed".into())
+                        };
+                        let _ = finished_tx.send(result);
+                    });
+                    return Ok(RunningResponse {
+                        headers: response_headers.get().cloned().unwrap_or_default(),
+                        events: receiver,
+                        finished,
+                        observer,
+                    });
+                }
+                Err(ApiError::Transport(ref error))
+                    if self.provider.is_recoverable_auth_error(error) && recovery.has_next() =>
+                {
+                    recovery.next().await.map_err(|_| GatewayError::auth())?;
+                }
+                Err(error) => return Err(GatewayError::from_api(error)),
+            }
+        }
+    }
+}
