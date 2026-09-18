@@ -65,6 +65,12 @@ impl Input {
                 "native image requests accept only the pinned Codex fields",
             ));
         }
+        // Mirror the image extension's defaults for public SDK requests.
+        let background = self
+            .background
+            .or((!native).then_some(ImageBackground::Auto));
+        let quality = self.quality.or((!native).then_some(ImageQuality::Auto));
+        let size = self.size.or_else(|| (!native).then(|| "auto".into()));
         if edit {
             let images = self
                 .images
@@ -85,9 +91,9 @@ impl Input {
                 images,
                 prompt: self.prompt,
                 model,
-                background: self.background,
-                quality: self.quality,
-                size: self.size,
+                background,
+                quality,
+                size,
                 n: self.n,
             }))
         } else {
@@ -99,9 +105,9 @@ impl Input {
             Ok(ToolRequest::Generate(ImageGenerationRequest {
                 prompt: self.prompt,
                 model,
-                background: self.background,
-                quality: self.quality,
-                size: self.size,
+                background,
+                quality,
+                size,
                 n: self.n,
             }))
         }
@@ -138,6 +144,12 @@ async fn handle(
         // client's defaults, as the public Responses adapter does.
         headers.remove("user-agent");
         headers.remove("originator");
+        headers.entry("x-codex-image-turn-id").or_insert_with(|| {
+            uuid::Uuid::new_v4()
+                .to_string()
+                .parse()
+                .expect("UUID is a valid header")
+        });
     }
     let content_type = headers
         .get("content-type")

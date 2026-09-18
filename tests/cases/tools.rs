@@ -455,6 +455,19 @@ async fn actual_openai_python_sdk_images_and_web_search() {
             .to_string()
             .contains("web_search")
     );
+    let received = h.fake.received.lock().unwrap();
+    for (headers, body) in received.iter().take(2) {
+        assert!(uuid::Uuid::parse_str(headers["x-codex-image-turn-id"].to_str().unwrap()).is_ok());
+        assert_eq!(body["background"], "auto");
+        assert_eq!(body["quality"], "auto");
+        assert_eq!(body["size"], "auto");
+        assert!(
+            !headers["user-agent"]
+                .to_str()
+                .unwrap()
+                .contains("OpenAI/Python")
+        );
+    }
 }
 
 fn search_response() -> Value {
