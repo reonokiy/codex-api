@@ -33,7 +33,7 @@ OAuth token/device exchange, agent task registration, JWKS, public distribution 
 
 ## Transport and client configuration
 
-Transparent routes retain the HTTP method, query, body bytes, status, end-to-end headers and WebSocket messages. Hop-by-hop headers, gateway auth, host and content length are rebuilt for each connection. Redirects are returned to the caller. Requests are limited to 16 MiB; the configured timeout covers response setup and subsequent stream inactivity. Specialized Responses, Images, Models, search and Realtime routes apply the behavior documented on their own pages.
+Transparent routes retain the HTTP method, query, body bytes, status, business/protocol headers and WebSocket messages. [Header cleanup](headers.md) removes downstream client identity and connection-local headers before forwarding; gateway auth, host, content length and WebSocket handshake fields are rebuilt for each connection. Redirects are returned to the caller. Requests are limited to 16 MiB; the configured timeout covers response setup and subsequent stream inactivity. Specialized Responses, Images, Models, search and Realtime routes apply the behavior documented on their own pages.
 
 A Codex model provider's `base_url` redirects inference. Other ChatGPT backend clients use top-level `chatgpt_base_url = "http://127.0.0.1:8080/backend-api"`; they must also send valid gateway authentication. Some original client features require a local ChatGPT login regardless of the model provider setting. The actor marker in the README enables the image-tool gate only.
 

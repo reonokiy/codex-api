@@ -417,7 +417,7 @@ async fn tools_use_original_lite_serializer_and_reject_unavailable_hosted_servic
 }
 
 #[tokio::test]
-#[ignore = "requires the openai Python SDK in .cache/python-sdk; uses a local fake upstream"]
+#[ignore = "requires tests/requirements.txt; uses a local fake upstream"]
 async fn actual_openai_python_sdk_images_and_web_search() {
     let search = json!({"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"Codex"}});
     let h = Harness::new(vec![
@@ -428,11 +428,7 @@ async fn actual_openai_python_sdk_images_and_web_search() {
     ], StatusCode::OK, false, Duration::from_secs(10)).await;
     let output = tokio::time::timeout(
         Duration::from_secs(30),
-        tokio::process::Command::new("/usr/bin/python3")
-            .env(
-                "PYTHONPATH",
-                format!("{}/.cache/python-sdk", env!("CARGO_MANIFEST_DIR")),
-            )
+        support::python::command()
             .args([
                 "-c",
                 include_str!("../support/openai_sdk.py"),
@@ -544,6 +540,8 @@ async fn standalone_search_matches_original_client_and_preserves_complete_output
         let response = reqwest::Client::new()
             .post(format!("{}/{prefix}/alpha/search", h.url))
             .bearer_auth("client-key")
+            .header("user-agent", "Python-urllib/3.12")
+            .header("originator", "external-search-client")
             .header("x-codex-turn-metadata", "fixed-turn-metadata")
             .json(&request)
             .send()

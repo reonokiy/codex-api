@@ -510,19 +510,25 @@ async fn deadline_releases_concurrency_slot() {
         vec![events()[0].clone()],
         StatusCode::OK,
         true,
-        Duration::from_millis(250),
+        Duration::from_secs(1),
     )
     .await;
-    let first = h
-        .request(json!({"input":"hi","stream":true}))
-        .send()
-        .await
-        .unwrap();
-    let second = h.request(json!({"input":"hi"})).send().await.unwrap();
+    // Build the TLS/root-store client before starting the deadline and reuse it.
+    // Constructing a new client between requests can outlast a short deadline
+    // under parallel test load, so the second request no longer sees a busy slot.
+    let client = reqwest::Client::new();
+    let request = |stream: bool| {
+        client
+            .post(format!("{}/v1/responses", h.url))
+            .bearer_auth("client-key")
+            .json(&json!({"model": h.model, "input": "hi", "stream": stream}))
+    };
+    let first = request(true).send().await.unwrap();
+    let second = request(false).send().await.unwrap();
     assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
     let events = parse_sse(&first.text().await.unwrap());
     assert_eq!(events.last().unwrap()["type"], "error");
-    let third = h.request(json!({"input":"hi"})).send().await.unwrap();
+    let third = request(false).send().await.unwrap();
     assert_eq!(third.status(), StatusCode::GATEWAY_TIMEOUT);
 }
 

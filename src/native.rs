@@ -48,27 +48,8 @@ pub struct ProxyRequest {
 pub(crate) use crate::server::authorize;
 
 pub fn response_headers(headers: &HeaderMap) -> HeaderMap {
-    let mut clean = headers.clone();
-    for value in headers.get_all("connection") {
-        if let Ok(value) = value.to_str() {
-            for name in value.split(',') {
-                clean.remove(name.trim());
-            }
-        }
-    }
-    for name in [
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailer",
-        "transfer-encoding",
-        "upgrade",
-        "content-length",
-    ] {
-        clean.remove(name);
-    }
+    let mut clean = crate::headers::transport_headers(headers);
+    clean.remove("content-length");
     clean
 }
 
@@ -85,8 +66,8 @@ pub(crate) fn websocket_headers(headers: &HeaderMap) -> HeaderMap {
 }
 
 pub fn request_headers(headers: &HeaderMap, policy: AuthPolicy) -> HeaderMap {
-    let mut clean = response_headers(headers);
-    for name in ["host", GATEWAY_AUTH] {
+    let mut clean = crate::headers::request_headers(headers);
+    for name in ["host", "content-length"] {
         clean.remove(name);
     }
     if policy != AuthPolicy::Passthrough {
@@ -96,6 +77,8 @@ pub fn request_headers(headers: &HeaderMap, policy: AuthPolicy) -> HeaderMap {
             "x-openai-actor-authorization",
             "x-openai-fedramp",
             "cookie",
+            "openai-organization",
+            "openai-project",
         ] {
             clean.remove(name);
         }
@@ -241,8 +224,13 @@ pub async fn handle(
             let (provider, auth) = gateway.backend.proxy_config(origin, auth).await?;
             auth.add_auth_headers(&mut upstream_headers);
             let url = provider.url_for_path(&path);
+            let defaults = if matches!(origin, Origin::Codex | Origin::ChatGpt) {
+                codex_login::default_client::default_headers()
+            } else {
+                HeaderMap::new()
+            };
             codex_api::RealtimeWebsocketClient::new(provider)
-                .connect_raw(&url, upstream_headers, HeaderMap::new())
+                .connect_raw(&url, upstream_headers, defaults)
                 .await
                 .map_err(GatewayError::from_api)
         })

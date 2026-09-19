@@ -100,15 +100,11 @@ The [complete endpoint index](docs/index.md) covers native backend, account/quot
 
 ## Verify
 
+After the one-time prerequisites in the [test runbook](docs/e2e.md), run the
+complete suite, including official clients and real subscription E2E:
+
 ```sh
-cargo test --locked
-cargo test --locked -p codex-api --lib
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-python3 scripts/fetch-codex-baseline.py
-python3 scripts/verify-codex-source.py
-cargo test --locked --test gateway actual_codex_cli -- --ignored
-python3 scripts/ablation.py
+cargo test-all
 ```
 
 Protocol tests compare request headers, compressed HTTP bodies, WebSocket frames and preserved outputs with the pinned official clients. Ablation removes one adapter behavior at a time in an isolated copy and requires its contract test to fail, then verifies the restored baseline; reports go to `artifacts/ablation/`.

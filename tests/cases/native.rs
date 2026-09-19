@@ -103,6 +103,12 @@ async fn native_routes_preserve_all_inventoried_backend_contracts() {
                 .header("mcp-session-id", "caller-session")
                 .header("x-future-field", "keep")
                 .header("user-agent", "original-codex-test")
+                .header("originator", "downstream-sdk")
+                .header("x-stainless-os", "client-os")
+                .header("x-forwarded-for", "192.0.2.10")
+                .header("origin", "https://client.example")
+                .header("connection", "x-private-hop")
+                .header("x-private-hop", "client-only")
                 .body(payload.as_slice());
             if entry["auth"] == "remote_control_token" {
                 req = req
@@ -130,7 +136,22 @@ async fn native_routes_preserve_all_inventoried_backend_contracts() {
             );
             assert_eq!(headers["mcp-session-id"], "caller-session");
             assert_eq!(headers["x-future-field"], "keep");
-            assert_eq!(headers["user-agent"], "original-codex-test");
+            assert_ne!(
+                headers.get("user-agent").and_then(|v| v.to_str().ok()),
+                Some("original-codex-test")
+            );
+            assert_ne!(
+                headers.get("originator").and_then(|v| v.to_str().ok()),
+                Some("downstream-sdk")
+            );
+            for name in [
+                "x-stainless-os",
+                "x-forwarded-for",
+                "origin",
+                "x-private-hop",
+            ] {
+                assert!(!headers.contains_key(name), "leaked {name} on {path}");
+            }
             assert!(!headers.contains_key("x-codex-gateway-authorization"));
             match entry["auth"].as_str().unwrap() {
                 "none" => assert!(!headers.contains_key("authorization")),

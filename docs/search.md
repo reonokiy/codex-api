@@ -5,6 +5,47 @@
 
 This is Codex's `web.run` transport, not an OpenAI public REST API. For official SDK-compatible hosted search, use [Responses `web_search`](responses.md#tools).
 
+Call this endpoint independently to get search text and structured results;
+no preceding Responses request is required. The gateway applies the shared
+[header cleanup](headers.md), retaining session/turn metadata and using its own
+Codex client identity upstream.
+
+## Standalone usage
+
+```sh
+curl http://127.0.0.1:8080/codex/alpha/search \
+  -H "Authorization: Bearer $CODEX_GATEWAY_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"my-search-session","model":"gpt-5.5","commands":{"search_query":[{"q":"OpenAI Codex","domains":["openai.com"]}],"response_length":"short"}}'
+```
+
+Structured `text_result` entries can contain `title`, `url`, `snippet`, `domain`
+and `ref_id`. To open a returned reference, reuse the same `id` and send
+`{"open":[{"ref_id":"turn0search0"}],"response_length":"short"}` as `commands`.
+Use a new session ID for an unrelated search. Result shapes depend on the command.
+
+The official Python SDK has no typed resource for this native endpoint, but its
+custom-request method works:
+
+```python
+import os
+import uuid
+from openai import OpenAI
+
+with OpenAI(base_url="http://127.0.0.1:8080", api_key=os.environ["CODEX_GATEWAY_API_KEY"]) as client:
+    session = str(uuid.uuid4())
+    result = client.post("/codex/alpha/search", cast_to=dict, body={
+        "id": session,
+        "model": "gpt-5.5",
+        "commands": {"search_query": [{"q": "OpenAI Codex"}], "response_length": "short"},
+    })
+    print(result["output"])
+    print(result.get("results", []))
+```
+
+This is a gateway/native extension; it is not a standard `/v1/search` API.
+It uses the gateway's ChatGPT login and request limits.
+
 ## JSON request
 
 ```json

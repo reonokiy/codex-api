@@ -1,4 +1,8 @@
 //! Opt-in real-subscription smoke test. Uses only a local gateway key, never account tokens.
+#[path = "support/live_gateway.rs"]
+mod live_gateway;
+#[path = "support/python.rs"]
+mod python;
 use codex_api::{
     ResponseCreateWsRequest, ResponseEvent, ResponsesWebsocketClient, ResponsesWsRequest,
 };
@@ -19,10 +23,11 @@ impl codex_api::AuthProvider for Key {
 }
 
 #[tokio::test]
-#[ignore = "requires running gateway with subscription login; consumes subscription usage"]
+#[ignore = "requires codex login; consumes subscription usage"]
 async fn real_subscription_http_ws_lite_and_compaction() {
-    let base = std::env::var("CODEX_GATEWAY_LIVE_URL").expect("set CODEX_GATEWAY_LIVE_URL");
-    let key = std::env::var("CODEX_GATEWAY_API_KEY").expect("set gateway key");
+    let gateway = live_gateway::LiveGateway::start().await;
+    let base = &gateway.url;
+    let key = gateway.key.clone();
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(100))
         .build()
@@ -72,7 +77,7 @@ async fn real_subscription_http_ws_lite_and_compaction() {
             save(&results);
             assert!(
                 status.is_success() && success,
-                "{endpoint} {name} failed: HTTP {status}, {text}"
+                "{endpoint} {name} failed: HTTP {status}; expected a completed response"
             );
         }
         for endpoint in ["codex", "v1"] {
@@ -182,10 +187,52 @@ async fn real_subscription_http_ws_lite_and_compaction() {
             save(&results);
             assert!(
                 status.is_success() && success,
-                "{endpoint} compact {name}: {body}"
+                "{endpoint} compact {name}: expected compaction output, HTTP {status}"
             );
         }
     }
+}
+
+#[tokio::test]
+#[ignore = "requires codex login and tests/requirements.txt; consumes subscription usage"]
+async fn real_subscription_openai_sdk() {
+    let prerequisites = python::command()
+        .args(["-c", "import openai, aiortc, websockets"])
+        .output()
+        .await
+        .expect("start Python; set CODEX_TEST_PYTHON if needed");
+    assert!(
+        prerequisites.status.success(),
+        "Install tests/requirements.txt for CODEX_TEST_PYTHON (see docs/e2e.md): {}",
+        String::from_utf8_lossy(&prerequisites.stderr)
+    );
+    let gateway = live_gateway::LiveGateway::start().await;
+    let report = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("artifacts/e2e/sdk/live-results.json");
+    let output = tokio::time::timeout(
+        Duration::from_secs(1200),
+        python::command()
+            .env("CODEX_GATEWAY_API_KEY", &gateway.key)
+            .args([
+                "-c",
+                include_str!("support/live_sdk.py"),
+                "--url",
+                &gateway.url,
+                "--report",
+            ])
+            .arg(&report)
+            .output(),
+    )
+    .await
+    .expect("SDK E2E exceeded 20 minutes")
+    .expect("start SDK E2E helper");
+    assert!(
+        output.status.success(),
+        "SDK E2E failed; report: {}\n{}\n{}",
+        report.display(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 fn save(results: &[Value]) {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts/protocol");

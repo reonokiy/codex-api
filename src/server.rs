@@ -143,6 +143,7 @@ async fn create(
             )
         })?;
     let stream = input.stream;
+    let headers = crate::headers::request_headers(&headers);
     let session_id = headers
         .get("thread-id")
         .or_else(|| headers.get("session-id"))
@@ -269,13 +270,12 @@ async fn native_create(
 
 pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap {
     // Forward protocol metadata; credentials and routing authority belong to the gateway.
+    let headers = crate::headers::request_headers(headers);
     let mut forwarded = HeaderMap::new();
     for name in [
         "session-id",
         "thread-id",
         "x-client-request-id",
-        "originator",
-        "user-agent",
         "openai-beta",
         "version",
         "x-codex-installation-id",
@@ -420,8 +420,9 @@ pub(crate) fn timeout_error() -> GatewayError {
 }
 
 pub(crate) fn forward_response_headers(headers: &HeaderMap) -> HeaderMap {
+    let headers = crate::headers::transport_headers(headers);
     let mut forwarded = HeaderMap::new();
-    for (name, value) in headers {
+    for (name, value) in &headers {
         if name.as_str().starts_with("x-codex-")
             || name.as_str().starts_with("x-ratelimit-")
             || matches!(
@@ -446,6 +447,7 @@ async fn compact(
     body: Result<Json<CreateResponse>, JsonRejection>,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    let headers = crate::headers::request_headers(&headers);
     let Json(input) = body.map_err(|e| GatewayError::invalid(e.body_text()))?;
     let model = gateway
         .models

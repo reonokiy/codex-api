@@ -140,10 +140,6 @@ async fn handle(
     let native = !uri.path().starts_with("/v1/");
     let mut headers = headers;
     if !native {
-        // SDK user agents are not Codex protocol metadata. Use the pinned
-        // client's defaults, as the public Responses adapter does.
-        headers.remove("user-agent");
-        headers.remove("originator");
         headers.entry("x-codex-image-turn-id").or_insert_with(|| {
             uuid::Uuid::new_v4()
                 .to_string()

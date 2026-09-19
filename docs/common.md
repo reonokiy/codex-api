@@ -1,5 +1,8 @@
 # Common rules
 
+See [header handling](headers.md) for the shared client-header cleanup and
+per-route credential rules.
+
 Send `Authorization: Bearer <CODEX_GATEWAY_API_KEY>` to subscription adapters. They use the gateway’s ChatGPT credentials upstream. Native routes that need independent credentials use `X-Codex-Gateway-Authorization: Bearer <gateway-key>` alongside upstream `Authorization`; see [native routing](native.md). `/healthz` and expiring [transfer URLs](transfers.md) do not require a gateway Bearer header. Authentication is optional only when no gateway key is configured on loopback.
 
 Use `Content-Type: application/json` unless an endpoint documents multipart or WebSocket transport. Use HTTPS/WSS outside a trusted local connection.

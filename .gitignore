@@ -1,8 +1,11 @@
 /target/
 /.cache/
+/.venv/
 /artifacts/
 /.agents/
 /.codex/
 .env
 .env.*
 auth.json
+__pycache__/
+*.py[cod]

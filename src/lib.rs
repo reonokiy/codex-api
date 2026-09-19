@@ -1,6 +1,7 @@
 pub mod backend;
 pub mod error;
 pub mod files;
+mod headers;
 pub mod images;
 mod lite_instructions;
 mod memories;

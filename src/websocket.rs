@@ -24,6 +24,7 @@ pub async fn upgrade(
     ws: WebSocketUpgrade,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    let headers = crate::headers::request_headers(&headers);
     let permit = gateway
         .concurrency
         .clone()

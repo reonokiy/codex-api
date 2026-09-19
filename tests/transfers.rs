@@ -131,6 +131,10 @@ async fn signed_transfers_preserve_storage_bytes_headers_status_and_queries_with
         .put(&upload_url)
         .header("authorization", "Bearer must-not-forward")
         .header("cookie", "session=must-not-forward")
+        .header("user-agent", "client-agent")
+        .header("x-stainless-os", "client-os")
+        .header("origin", "https://client.example")
+        .header("x-forwarded-for", "192.0.2.1")
         .header("x-gateway-api-key", "must-not-forward")
         .header("x-openai-actor-authorization", "must-not-forward")
         .header("chatgpt-account-id", "must-not-forward")
@@ -187,6 +191,10 @@ async fn signed_transfers_preserve_storage_bytes_headers_status_and_queries_with
     for name in [
         "authorization",
         "cookie",
+        "user-agent",
+        "x-stainless-os",
+        "origin",
+        "x-forwarded-for",
         "x-gateway-api-key",
         "x-openai-actor-authorization",
         "chatgpt-account-id",

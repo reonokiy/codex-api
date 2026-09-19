@@ -286,40 +286,25 @@ fn validate_url(url: &str) -> Result<Uri, GatewayError> {
 }
 
 fn transfer_headers(headers: &HeaderMap, request: bool) -> HeaderMap {
-    let nominated = headers
-        .get_all(http::header::CONNECTION)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(','))
-        .map(str::trim)
-        .collect::<Vec<_>>();
+    let headers = crate::headers::transport_headers(headers);
     let mut forwarded = HeaderMap::new();
-    for (name, value) in headers {
+    for (name, value) in &headers {
         let name_str = name.as_str();
-        if matches!(
-            name_str,
-            "connection"
-                | "keep-alive"
-                | "proxy-authenticate"
-                | "proxy-authorization"
-                | "te"
-                | "trailer"
-                | "transfer-encoding"
-                | "upgrade"
-                | "host"
-        ) || nominated.iter().any(|n| n.eq_ignore_ascii_case(name_str))
+        if name_str == "host"
             || (request
-                && (matches!(
-                    name_str,
-                    "authorization"
-                        | "cookie"
-                        | "x-api-key"
-                        | "api-key"
-                        | "x-gateway-api-key"
-                        | "chatgpt-account-id"
-                        | "x-openai-actor-authorization"
-                        | "x-openai-fedramp"
-                ) || name_str.starts_with("x-codex-")
+                && (crate::headers::client_header(name_str)
+                    || matches!(
+                        name_str,
+                        "authorization"
+                            | "cookie"
+                            | "x-api-key"
+                            | "api-key"
+                            | "x-gateway-api-key"
+                            | "chatgpt-account-id"
+                            | "x-openai-actor-authorization"
+                            | "x-openai-fedramp"
+                    )
+                    || name_str.starts_with("x-codex-")
                     || name_str.starts_with("x-openai-internal-")
                     || name_str.starts_with("x-gateway-")))
         {

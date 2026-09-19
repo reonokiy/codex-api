@@ -213,6 +213,18 @@ async fn realtime_websockets_preserve_events_binary_and_explicit_auth_without_st
         request
             .headers_mut()
             .insert("x-session-id", "session-test".parse().unwrap());
+        for (name, value) in [
+            ("user-agent", "OpenAI/Python downstream"),
+            ("originator", "downstream-sdk"),
+            ("origin", "https://client.example"),
+            ("x-stainless-runtime", "CPython"),
+            ("x-forwarded-for", "192.0.2.10"),
+            ("connection", "Upgrade, x-private-hop"),
+            ("x-private-hop", "local-connection"),
+        ] {
+            request.headers_mut().insert(name, value.parse().unwrap());
+        }
+        let downstream_key = request.headers()["sec-websocket-key"].clone();
         let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
         assert!(
             tokio::time::timeout(Duration::from_millis(100), socket.next())
@@ -238,6 +250,17 @@ async fn realtime_websockets_preserve_events_binary_and_explicit_auth_without_st
         let received = h.fake.received.lock().unwrap();
         assert_eq!(received[0].0["openai-alpha"], "quicksilver=v2");
         assert_eq!(received[0].0["x-session-id"], "session-test");
+        assert_ne!(received[0].0["sec-websocket-key"], downstream_key);
+        assert_ne!(received[0].0["user-agent"], "OpenAI/Python downstream");
+        assert_ne!(received[0].0["originator"], "downstream-sdk");
+        for name in [
+            "origin",
+            "x-stainless-runtime",
+            "x-forwarded-for",
+            "x-private-hop",
+        ] {
+            assert!(!received[0].0.contains_key(name), "leaked {name}");
+        }
         assert!(!received[0].0.contains_key("x-codex-gateway-authorization"));
         if delegated {
             assert_eq!(
