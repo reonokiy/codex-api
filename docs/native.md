@@ -35,9 +35,33 @@ OAuth token/device exchange, agent task registration, JWKS, public distribution 
 
 Transparent routes retain the HTTP method, query, body bytes, status, business/protocol headers and WebSocket messages. [Header cleanup](headers.md) removes downstream client identity and connection-local headers before forwarding; gateway auth, host, content length and WebSocket handshake fields are rebuilt for each connection. Redirects are returned to the caller. Requests are limited to 16 MiB; the configured timeout covers response setup and subsequent stream inactivity. Specialized Responses, Images, Models, search and Realtime routes apply the behavior documented on their own pages.
 
-A Codex model provider's `base_url` redirects inference. Other ChatGPT backend clients use top-level `chatgpt_base_url = "http://127.0.0.1:8080/backend-api"`; they must also send valid gateway authentication. Some original client features require a local ChatGPT login regardless of the model provider setting. The actor marker in the README enables the image-tool gate only.
+A Codex model provider's `base_url` redirects inference. Other ChatGPT backend clients use top-level `chatgpt_base_url = "http://127.0.0.1:8080/backend-api"`; they must also send valid gateway authentication. Some original client features require a local ChatGPT login regardless of the model provider setting. The actor marker below enables the image-tool gate only.
 
 Auth, telemetry, distribution and some Realtime origins are fixed separately in Codex. Changing the model provider URL does not redirect them automatically: clients must select the documented gateway namespace through a supported override or a client routing change. Remote-control URL validation in the pin accepts ChatGPT domains and localhost, so an arbitrary Kubernetes hostname cannot be used as that override unchanged. Local tools and app-server RPC continue to execute in the calling Codex.
+
+## Connect another Codex
+
+Set `CODEX_GATEWAY_API_KEY` to the gateway key and add this to the client's `config.toml`:
+
+```toml
+model = "gpt-5.5"
+model_provider = "gateway"
+
+[model_providers.gateway]
+name = "OpenAI"
+base_url = "http://127.0.0.1:8080/backend-api/codex"
+wire_api = "responses"
+env_key = "CODEX_GATEWAY_API_KEY"
+requires_openai_auth = false
+supports_websockets = true
+http_headers = { "x-openai-actor-authorization" = "gateway" }
+```
+
+Keep the provider name and URL suffix shown above. The actor header enables the
+pinned client's image-tool capability; the gateway removes it before forwarding.
+Image generation is enabled by default, or explicitly with
+`codex --enable image_generation`. For native `web.run`, use
+`codex --enable standalone_web_search --search`.
 
 ## History and notes
 
