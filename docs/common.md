@@ -18,6 +18,34 @@ Use `Content-Type: application/json` unless an endpoint documents multipart or W
 
 Models and health checks do not occupy generation slots. Images, standalone search, uploads and native routes share slots with Responses. Signed transfers have separate limits. WebSocket slots last for the connection lifetime.
 
+## Startup login
+
+When no credentials and no `auth.json` exist in `CODEX_HOME`, the executable
+starts the pinned Codex library's device code flow. The login URL and one-time
+code appear in container logs; no browser, shell or inbound callback is needed
+in the container. Enable device code login in your ChatGPT security settings
+or workspace permissions first; see [OpenAI's authentication guide](https://developers.openai.com/codex/auth).
+
+Login has a 10-minute deadline, including the code request and token exchange.
+On timeout or failure the process exits nonzero. Kubernetes Deployment pods
+restart it automatically; Docker needs `--restart unless-stopped` or a similar
+restart policy. A standalone process exits without restarting itself.
+
+The gateway only listens after login succeeds. In Kubernetes, allow more than
+10 minutes with a startup probe (for example, `/healthz` every 10 seconds with
+`failureThreshold: 66`) so liveness checks do not interrupt login. Read the
+instructions with `kubectl logs -f deployment/codex-api -n codex-api`.
+
+Mount a writable PVC at `/data` and allow UID/GID `65532:65532` to write there.
+The default file credential store saves `/data/auth.json`; explicitly configured
+Codex credential stores and authentication restrictions remain respected.
+Existing credentials are reused, and an existing invalid file is not replaced
+automatically. Run one replica with the `Recreate` update strategy.
+
+Token refresh uses Codex's `AuthManager`, including proactive checks when
+credentials are requested, authentication-error recovery, and persistence of
+refreshed tokens. Revoked or expired refresh tokens require a new login.
+
 ## Errors
 
 Gateway errors use this shape; `message` describes the failure:

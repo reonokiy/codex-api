@@ -7,10 +7,10 @@ Built on Codex **0.155.0** and Rust **1.95.0**.
 
 ## Run
 
-Log in on the host and start the gateway:
+Start the gateway with a writable data directory:
 
 ```sh
-codex login
+mkdir -p "$HOME/.codex"
 export CODEX_GATEWAY_API_KEY='your-gateway-key'
 
 docker run -d --name codex-api --restart unless-stopped \
@@ -20,6 +20,12 @@ docker run -d --name codex-api --restart unless-stopped \
   -v "$HOME/.codex:/data" \
   ghcr.io/reonokiy/codex-api:latest
 ```
+
+If no credentials or `auth.json` exist, the gateway prints a device login link
+and code in `docker logs -f codex-api`. Complete login in your browser within
+10 minutes; credentials are saved to `/data/auth.json` and the gateway starts.
+On timeout it exits with an error and the restart policy retries. Existing
+Codex credentials are reused. See [login details](docs/common.md#startup-login).
 
 Or run from source with the same login and environment variable:
 

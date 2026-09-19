@@ -2,7 +2,7 @@ use anyhow::{Context, bail};
 use clap::Parser;
 use codex_api_gateway::{
     server::{Gateway, router},
-    settings::load_backend,
+    settings::load_backend_with_device_login,
 };
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .join(".codex"),
     };
-    let backend = load_backend(home).await?;
+    let backend = load_backend_with_device_login(home).await?;
     let models = codex_models_manager::bundled_models_response()?.models;
     let timeout = Duration::from_secs(args.timeout_seconds);
     let transfers = std::env::var("CODEX_GATEWAY_PUBLIC_URL")
