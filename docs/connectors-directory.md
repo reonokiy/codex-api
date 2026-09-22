@@ -8,4 +8,4 @@
 
 Each `DirectoryApp` includes `id`, `name`, optional `description`, `app_metadata`, `branding`, `labels`, `logo_url`, `logo_url_dark`, `icon_assets`, `icon_dark_assets`, `distribution_channel`, `visibility`. Codex also accepts camelCase aliases for metadata/logo fields.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/connectors/src/lib.rs#L272) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/connectors/src/lib.rs#L272) · [Native rules](native.md)

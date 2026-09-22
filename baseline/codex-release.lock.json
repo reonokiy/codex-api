@@ -1,15 +1,15 @@
 {
   "repository": "https://github.com/openai/codex.git",
-  "release": "0.155.0",
-  "tag": "rust-v0.155.0",
-  "tag_object": "799f378ee7f85c775dee82d9bc45cc2df8df18fb",
-  "commit": "f0a1b8f0849d90960bc406b848f32e5a129b0457",
-  "published_at": "2026-09-17T23:14:43Z",
-  "release_url": "https://github.com/openai/codex/releases/tag/rust-v0.155.0",
+  "release": "0.155.1",
+  "tag": "rust-v0.155.1",
+  "tag_object": "4e21628f9ec9ee656650cd2b62ef92225725b5ac",
+  "commit": "be2951ea34f0d295ed0becf97079f92fa5f6950e",
+  "published_at": "2026-09-18T20:03:04Z",
+  "release_url": "https://github.com/openai/codex/releases/tag/rust-v0.155.1",
   "prerelease": false,
   "binary": {
     "asset": "codex-x86_64-unknown-linux-musl.tar.gz",
-    "url": "https://github.com/openai/codex/releases/download/rust-v0.155.0/codex-x86_64-unknown-linux-musl.tar.gz",
-    "sha256": "e415cc3adb94ade16e8d44b4dd58a9201cc34b2ee51a5d6eddf2a3a00aecb6c0"
+    "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "a0ef8b2debc3bf747e07b1a039354de31300ac0dcc2276498ba281470b5d9115"
   }
 }

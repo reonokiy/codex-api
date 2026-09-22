@@ -3,7 +3,11 @@
 A gateway that uses your ChatGPT subscription through the Codex Rust libraries.
 
 Supports Responses, streaming, WebSocket, images, files, search and Realtime.
-Built on Codex **0.155.0** and Rust **1.95.0**.
+Built on Codex **0.155.1** and Rust **1.95.0**.
+
+The gateway loads your account's model catalog at startup, including
+`gpt-6-sol` and `gpt-6-luna` when available. Restart to refresh the catalog;
+see [model discovery and fallback behavior](docs/models.md).
 
 ## Run
 

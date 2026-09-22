@@ -11,4 +11,4 @@ Aliases: `/codex/live`, `/backend-api/codex/live` · [Native rules](native.md)
 
 This is the transport used by the pinned source. The currently documented public Live API uses [session routes](live-sessions.md) and a different JSON negotiation format.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/codex-api/src/endpoint/realtime_call.rs#L143)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/codex-api/src/endpoint/realtime_call.rs#L143)

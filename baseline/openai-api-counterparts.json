@@ -1,7 +1,7 @@
 {
   "date": "2026-09-18",
-  "codex_release": "0.155.0",
-  "commit": "f0a1b8f0849d90960bc406b848f32e5a129b0457",
+  "codex_release": "0.155.1",
+  "commit": "be2951ea34f0d295ed0becf97079f92fa5f6950e",
   "scope": "First-party network API families used by the fixed source, compared with currently documented OpenAI Platform APIs. Family-level semantic decisions are inferences from the cited source contracts, not claims of backend feature availability.",
   "evidence": {
     "native_inventory": "api-inventory.json",

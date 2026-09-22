@@ -8,4 +8,4 @@
 
 Upload the file to `upload_url`, then call [upload completion](file-upload-complete.md). With `CODEX_GATEWAY_PUBLIC_URL`, the upload URL becomes a method-bound [transfer URL](transfers.md).
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/codex-api/src/files.rs#L138) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/codex-api/src/files.rs#L138) · [Native rules](native.md)

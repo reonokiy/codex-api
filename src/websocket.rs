@@ -165,7 +165,7 @@ fn adapt_public_request(
     let model = models
         .iter()
         .find(|m| m.slug == input.model)
-        .ok_or_else(|| GatewayError::invalid("model is absent from the pinned Codex catalog"))?;
+        .ok_or_else(|| GatewayError::invalid("model is absent from the gateway model catalog"))?;
     let request = input.into_codex(model, session)?;
     let mut wire = ResponseCreateWsRequest::from(&request);
     if let Some(previous) = previous {

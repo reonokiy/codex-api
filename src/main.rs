@@ -47,8 +47,10 @@ async fn main() -> anyhow::Result<()> {
         .join(".codex"),
     };
     let backend = load_backend_with_device_login(home).await?;
-    let models = codex_models_manager::bundled_models_response()?.models;
     let timeout = Duration::from_secs(args.timeout_seconds);
+    let models = backend
+        .model_catalog(timeout.min(Duration::from_secs(30)))
+        .await?;
     let transfers = std::env::var("CODEX_GATEWAY_PUBLIC_URL")
         .ok()
         .map(|url| {

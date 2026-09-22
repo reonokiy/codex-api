@@ -139,7 +139,7 @@ async fn create(
         .find(|v| v.slug == input.model)
         .ok_or_else(|| {
             GatewayError::invalid(
-                "model is absent from the pinned Codex catalog; see GET /v1/models",
+                "model is absent from the gateway model catalog; see GET /v1/models",
             )
         })?;
     let stream = input.stream;
@@ -453,7 +453,7 @@ async fn compact(
         .models
         .iter()
         .find(|m| m.slug == input.model)
-        .ok_or_else(|| GatewayError::invalid("model is absent from the pinned Codex catalog"))?;
+        .ok_or_else(|| GatewayError::invalid("model is absent from the gateway model catalog"))?;
     let session_id = headers
         .get("thread-id")
         .or_else(|| headers.get("session-id"))

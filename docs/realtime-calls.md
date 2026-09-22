@@ -15,4 +15,4 @@ With `X-Codex-Gateway-Authorization` plus upstream `Authorization`, the original
 
 **Response:** upstream SDP answer bytes, status and `Location` containing the call ID. `Location` is not rewritten. Connect a [sideband WebSocket](realtime.md) using that ID. Session options and entitlement are validated upstream.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/codex-api/src/endpoint/realtime_call.rs#L143) · [Official WebRTC guide](https://developers.openai.com/api/docs/guides/voice-webrtc?api=realtime)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/codex-api/src/endpoint/realtime_call.rs#L143) · [Official WebRTC guide](https://developers.openai.com/api/docs/guides/voice-webrtc?api=realtime)

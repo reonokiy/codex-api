@@ -2,7 +2,7 @@
 
 [Common rules](common.md) · [Native routing and credentials](native.md) · [Pinned inventory](../baseline/api-inventory.json) · [Official counterpart mapping](../baseline/openai-api-counterparts.json)
 
-Each page describes one logical endpoint and its aliases. The inventory covers first-party routes found in Codex 0.155.0; transparent forwarding does not establish entitlement or full public API compatibility. `field?` means optional/nullable in the pinned client; server-owned and additional fields are preserved.
+Each page describes one logical endpoint and its aliases. The inventory covers first-party routes found in Codex 0.155.1; transparent forwarding does not establish entitlement or full public API compatibility. `field?` means optional/nullable in the pinned client; server-owned and additional fields are preserved.
 
 ## Public adapters
 

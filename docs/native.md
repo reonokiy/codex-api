@@ -1,6 +1,6 @@
 # Native routing
 
-The gateway exposes the first-party routes found in Codex **0.155.0**. See the [endpoint index](index.md), [source inventory](../baseline/api-inventory.json) and [official API comparison](../baseline/openai-api-counterparts.json). These routes relay server-owned contracts; account entitlement and upstream validation still apply.
+The gateway exposes the first-party routes found in Codex **0.155.1**. See the [endpoint index](index.md), [source inventory](../baseline/api-inventory.json) and [official API comparison](../baseline/openai-api-counterparts.json). These routes relay server-owned contracts; account entitlement and upstream validation still apply.
 
 | Gateway prefix | Upstream prefix |
 | --- | --- |

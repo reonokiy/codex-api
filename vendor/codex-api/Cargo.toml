@@ -1,7 +1,7 @@
-# Vendored from Codex rust-v0.155.0; workspace dependencies expanded.
+# Vendored from Codex rust-v0.155.1; workspace dependencies expanded.
 [package]
 name = "codex-api"
-version = "0.155.0"
+version = "0.155.1"
 edition = "2024"
 license = "Apache-2.0"
 
@@ -10,11 +10,11 @@ async-channel = { "version" = "2.3.1" }
 base64 = { "version" = "0.22.1" }
 bytes = { "version" = "1.10.1" }
 chrono = { "version" = "0.4.43" }
-codex-client = { "git" = "https://github.com/openai/codex.git", "rev" = "f0a1b8f0849d90960bc406b848f32e5a129b0457" }
-codex-http-client = { "git" = "https://github.com/openai/codex.git", "rev" = "f0a1b8f0849d90960bc406b848f32e5a129b0457" }
-codex-protocol = { "git" = "https://github.com/openai/codex.git", "rev" = "f0a1b8f0849d90960bc406b848f32e5a129b0457" }
-codex-utils-rustls-provider = { "git" = "https://github.com/openai/codex.git", "rev" = "f0a1b8f0849d90960bc406b848f32e5a129b0457" }
-codex-websocket-client = { "git" = "https://github.com/openai/codex.git", "rev" = "f0a1b8f0849d90960bc406b848f32e5a129b0457" }
+codex-client = { "git" = "https://github.com/openai/codex.git", "rev" = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-http-client = { "git" = "https://github.com/openai/codex.git", "rev" = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-protocol = { "git" = "https://github.com/openai/codex.git", "rev" = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-utils-rustls-provider = { "git" = "https://github.com/openai/codex.git", "rev" = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-websocket-client = { "git" = "https://github.com/openai/codex.git", "rev" = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
 futures = { "version" = "0.3", "default-features" = false }
 http = { "version" = "1.3.1" }
 schemars = { "version" = "0.8.22" }

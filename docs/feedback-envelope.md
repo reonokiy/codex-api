@@ -8,4 +8,4 @@
 
 Original `x-sentry-auth` is preserved. This route sends no subscription Bearer credential.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/feedback/src/upload.rs#L42) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/feedback/src/upload.rs#L42) · [Native rules](native.md)

@@ -1334,7 +1334,7 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
     let client = reqwest::Client::new();
     for path in ["codex", "backend-api/codex"] {
         let response = client
-            .get(format!("{}/{path}/models?client_version=0.155.0", h.url))
+            .get(format!("{}/{path}/models?client_version=0.155.1", h.url))
             .bearer_auth("client-key")
             .send()
             .await
@@ -1351,7 +1351,7 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
     }
     let directory = h.capture.save("model-catalog");
     let first = std::fs::read(directory.join("0-request.tcp")).unwrap();
-    assert!(first.starts_with(b"GET /models?client_version=0.155.0 HTTP/1.1\r\n"));
+    assert!(first.starts_with(b"GET /models?client_version=0.155.1 HTTP/1.1\r\n"));
 }
 
 #[path = "cases/tools.rs"]

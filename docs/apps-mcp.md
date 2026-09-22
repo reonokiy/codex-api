@@ -10,4 +10,4 @@
 
 Preserve `Mcp-Session-Id`, `MCP-Protocol-Version`, `Last-Event-ID` and negotiated content types. `POST` carries JSON-RPC requests/notifications, `GET` opens the event stream, and `DELETE` ends the session. This forwards the native Apps MCP service; public Responses `mcp` tool orchestration has a different contract.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/codex-mcp/src/mcp/mod.rs#L592) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/codex-mcp/src/mcp/mod.rs#L592) · [Native rules](native.md)

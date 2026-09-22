@@ -6,4 +6,4 @@
 
 **Response:** `{authorization_code:string,code_challenge:string,code_verifier:string}; upstream 403/404 means pending authorization to the pinned polling client`.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/login/src/device_code_auth.rs#L107) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/login/src/device_code_auth.rs#L107) · [Native rules](native.md)

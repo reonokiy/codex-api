@@ -6,4 +6,4 @@
 
 **Response:** `{email?:string,chatgpt_user_id:string,chatgpt_account_id:string,chatgpt_plan_type:string,chatgpt_account_is_fedramp:boolean}`.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/login/src/auth/personal_access_token.rs#L13) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/login/src/auth/personal_access_token.rs#L13) · [Native rules](native.md)

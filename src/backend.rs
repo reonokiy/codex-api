@@ -122,6 +122,34 @@ impl Backend {
         }
     }
 
+    /// Resolve account model capabilities once at startup, with an offline fallback.
+    pub async fn model_catalog(
+        &self,
+        timeout: std::time::Duration,
+    ) -> anyhow::Result<Vec<codex_protocol::openai_models::ModelInfo>> {
+        let fetch = async {
+            let (body, _) = self
+                .models(crate::CODEX_RELEASE, http::HeaderMap::new())
+                .await?;
+            let catalog: codex_protocol::openai_models::ModelsResponse =
+                serde_json::from_slice(&body)?;
+            anyhow::ensure!(
+                !catalog.models.is_empty(),
+                "upstream model catalog is empty"
+            );
+            Ok::<_, anyhow::Error>(catalog.models)
+        };
+        match tokio::time::timeout(timeout, fetch).await {
+            Ok(Ok(models)) => {
+                tracing::info!(count = models.len(), "Loaded account model catalog");
+                return Ok(models);
+            }
+            Ok(Err(_)) => tracing::warn!("Model catalog unavailable; using bundled Codex models"),
+            Err(_) => tracing::warn!("Model catalog timed out; using bundled Codex models"),
+        }
+        Ok(codex_models_manager::bundled_models_response()?.models)
+    }
+
     pub async fn models(
         &self,
         version: &str,

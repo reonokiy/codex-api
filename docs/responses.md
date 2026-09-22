@@ -25,7 +25,7 @@
 | `prompt_cache_key` | Optional string; defaults to the request session ID |
 | `include` | Array of `"reasoning.encrypted_content"`, `"web_search_call.action.sources"`, `"web_search_call.results"`; encrypted reasoning is always requested |
 
-Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected bundled model are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
+Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected model in the startup catalog are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
 
 Message inputs accept `role` (`user`, `assistant`, `system`, `developer`) and string or Codex content arrays. Text and image content, reasoning, function/custom calls and their outputs, web-search calls and Codex compaction items are supported. Functions/custom tools run in the caller, which submits their outputs in the next request.
 

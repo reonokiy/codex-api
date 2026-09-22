@@ -24,4 +24,4 @@ The original Codex library reserves the file, uploads to signed storage and fina
 
 This adapter covers upload only. It does not invent metadata retrieval, listing, deletion or content-download routes for native file IDs. The separate [Platform namespace](platform.md) supports those official operations using actual Platform credentials and Platform file IDs.
 
-[Pinned upload pipeline](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/codex-api/src/files.rs#L95) · [Official upload API](https://developers.openai.com/api/reference/resources/files/methods/create)
+[Pinned upload pipeline](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/codex-api/src/files.rs#L95) · [Official upload API](https://developers.openai.com/api/reference/resources/files/methods/create)

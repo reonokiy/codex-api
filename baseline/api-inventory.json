@@ -1,7 +1,7 @@
 {
-  "codex_release": "0.155.0",
-  "commit": "f0a1b8f0849d90960bc406b848f32e5a129b0457",
-  "source_root": "https://github.com/openai/codex/tree/f0a1b8f0849d90960bc406b848f32e5a129b0457",
+  "codex_release": "0.155.1",
+  "commit": "be2951ea34f0d295ed0becf97079f92fa5f6950e",
+  "source_root": "https://github.com/openai/codex/tree/be2951ea34f0d295ed0becf97079f92fa5f6950e",
   "inventory_method": "Read production Rust source for first-party request constructors, URL builders, and all HTTP/WebSocket clients. Method GET on streaming endpoints denotes HTTP WebSocket upgrade or MCP SSE GET as documented. Public counterparts are source-backed family mappings, not unsupported completeness claims.",
   "entries": [
     {

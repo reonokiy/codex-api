@@ -79,7 +79,7 @@ impl<T: HttpTransport> HttpTransport for TapTransport<T> {
 }
 
 /// Keep the raw catalog while the release's ModelsClient performs native decoding.
-/// 0.155.0 has no list_models_raw method, so capture at its transport boundary.
+/// 0.155.1 has no list_models_raw method, so capture at its transport boundary.
 pub struct ModelCatalogTransport {
     pub inner: codex_api::ReqwestTransport,
     pub body: std::sync::Arc<std::sync::OnceLock<Bytes>>,

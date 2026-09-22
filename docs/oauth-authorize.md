@@ -8,4 +8,4 @@
 
 Preserves response status, `Location` and cookies. This is a route relay, not a complete hosted sign-in callback; use the original redirect URI and PKCE flow. Browser links are not automatically rewritten.
 
-[Pinned source](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/login/src/server.rs#L611) · [Native rules](native.md)
+[Pinned source](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/login/src/server.rs#L611) · [Native rules](native.md)

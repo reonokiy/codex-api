@@ -35,11 +35,13 @@ impl LiveGateway {
             .await
             .expect("real E2E requires codex login; see docs/e2e.md");
         let key = uuid::Uuid::new_v4().to_string();
+        let models = backend
+            .model_catalog(Duration::from_secs(30))
+            .await
+            .unwrap();
         let app = router(Gateway {
             backend,
-            models: codex_models_manager::bundled_models_response()
-                .unwrap()
-                .models,
+            models,
             key: Some(key.clone()),
             concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
             timeout: Duration::from_secs(300),

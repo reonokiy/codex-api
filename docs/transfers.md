@@ -11,4 +11,4 @@ Set `CODEX_GATEWAY_PUBLIC_URL=https://gateway.example.com` to replace native sig
 
 Handles expire after 15 minutes, are stored only in memory, and are capped at 1,024 per process. Transfers allow 8 concurrent streams and 512 MiB per body. A missing/expired handle returns 404, a wrong method 405, and exhausted transfer capacity 503. In Kubernetes, use one replica or route each handle back to the process that issued it; restarts invalidate existing URLs.
 
-[Pinned upload implementation](https://github.com/openai/codex/blob/f0a1b8f0849d90960bc406b848f32e5a129b0457/codex-rs/codex-api/src/files.rs#L186)
+[Pinned upload implementation](https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/codex-api/src/files.rs#L186)

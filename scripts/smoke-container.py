@@ -43,7 +43,9 @@ with tempfile.TemporaryDirectory() as home:
     try:
         port = docker('port', container, '8080/tcp').rsplit(':', 1)[1]
         base = f'http://127.0.0.1:{port}'
-        for attempt in range(30):
+        # Startup may spend up to 30 seconds fetching the account model catalog
+        # before falling back to bundled models with these synthetic credentials.
+        for attempt in range(90):
             try:
                 health = json.load(urllib.request.urlopen(base + '/healthz', timeout=2))
                 break
