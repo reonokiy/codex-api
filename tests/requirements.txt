@@ -1,3 +1,0 @@
-openai==3.16.0
-aiortc==1.15.0
-websockets==17.1

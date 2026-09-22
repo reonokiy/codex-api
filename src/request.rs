@@ -34,31 +34,69 @@ pub struct CreateResponse {
 #[serde(deny_unknown_fields)]
 pub struct ReasoningInput {
     pub effort: Option<ReasoningEffort>,
+    #[serde(alias = "generate_summary")]
     pub summary: Option<ReasoningSummary>,
+    pub context: Option<ReasoningContextInput>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningContextInput {
+    Auto,
+    CurrentTurn,
+    AllTurns,
+}
+
+impl From<ReasoningContextInput> for codex_api::ReasoningContext {
+    fn from(value: ReasoningContextInput) -> Self {
+        match value {
+            ReasoningContextInput::Auto => Self::Auto,
+            ReasoningContextInput::CurrentTurn => Self::CurrentTurn,
+            ReasoningContextInput::AllTurns => Self::AllTurns,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextInput {
     pub verbosity: Option<Verbosity>,
-    pub format: Option<JsonFormat>,
+    pub format: Option<TextFormatInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum TextFormatInput {
+    Text {},
+    JsonSchema(JsonFormat),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct JsonFormat {
-    pub r#type: String,
     pub name: String,
     pub schema: Value,
     pub strict: Option<bool>,
 }
 
 impl CreateResponse {
+    /// Lite requires all-turn reasoning. Other explicit modes use regular Responses.
+    pub fn uses_responses_lite(&self, model: &ModelInfo) -> bool {
+        model.use_responses_lite
+            && !matches!(
+                self.reasoning
+                    .as_ref()
+                    .and_then(|reasoning| reasoning.context),
+                Some(ReasoningContextInput::Auto | ReasoningContextInput::CurrentTurn)
+            )
+    }
+
     pub fn into_codex(
         self,
         model: &ModelInfo,
         session_id: &str,
     ) -> Result<ResponsesApiRequest, GatewayError> {
+        let lite = self.uses_responses_lite(model);
         if self.store {
             return Err(GatewayError::invalid(
                 "store=true is not supported; send full input history",
@@ -104,6 +142,7 @@ impl CreateResponse {
                 "reasoning effort is not supported by this Codex model",
             ));
         }
+        let context = reasoning_input.as_ref().and_then(|v| v.context);
         let summary = reasoning_input
             .and_then(|v| v.summary)
             .unwrap_or(model.default_reasoning_summary);
@@ -112,9 +151,9 @@ impl CreateResponse {
             summary: (model.supports_reasoning_summary_parameter
                 && summary != ReasoningSummary::None)
                 .then_some(summary),
-            context: model
-                .use_responses_lite
-                .then_some(codex_api::ReasoningContext::AllTurns),
+            context: context
+                .map(Into::into)
+                .or_else(|| lite.then_some(codex_api::ReasoningContext::AllTurns)),
         };
         let text_input = self.text;
         let requested_verbosity = text_input.as_ref().and_then(|v| v.verbosity);
@@ -127,11 +166,14 @@ impl CreateResponse {
             .support_verbosity
             .then(|| requested_verbosity.or(model.default_verbosity))
             .flatten();
-        let format = text_input.and_then(|v| v.format);
+        let format = text_input
+            .and_then(|v| v.format)
+            .and_then(|format| match format {
+                TextFormatInput::Text {} => None,
+                TextFormatInput::JsonSchema(format) => Some(format),
+            });
         if let Some(format) = &format
-            && (format.r#type != "json_schema"
-                || format.name.is_empty()
-                || !format.schema.is_object())
+            && (format.name.is_empty() || !format.schema.is_object())
         {
             return Err(GatewayError::invalid(
                 "text.format requires type=json_schema, name, and an object schema",
@@ -164,7 +206,7 @@ impl CreateResponse {
                 .and_then(|v| v.instructions_template.clone())
                 .unwrap_or_else(|| codex_models_manager::model_info::BASE_INSTRUCTIONS.to_owned())
         });
-        let tools = if model.use_responses_lite {
+        let tools = if lite {
             let tools = codex_tools::create_tools_json_for_responses_lite(&tool_specs)
                 .map_err(GatewayError::internal)?;
             let namespace = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, session_id.as_bytes());
@@ -210,8 +252,7 @@ impl CreateResponse {
             input,
             tools,
             tool_choice: "auto".into(),
-            parallel_tool_calls: self.parallel_tool_calls.unwrap_or(true)
-                && !model.use_responses_lite,
+            parallel_tool_calls: self.parallel_tool_calls.unwrap_or(true) && !lite,
             reasoning: Some(reasoning),
             store: false,
             stream: true,

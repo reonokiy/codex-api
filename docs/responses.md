@@ -18,14 +18,16 @@
 | `tools` | Array, default `[]`; see below |
 | `tool_choice` | Only `"auto"` supported |
 | `parallel_tool_calls` | Boolean, default `true`; disabled for Responses Lite |
-| `reasoning` | Optional object; `effort` is a model-supported string, `summary` is `auto`, `concise`, `detailed` or `none` |
+| `reasoning` | Optional object; `effort` is a model-supported string, `summary` is `auto`, `concise`, `detailed` or `none`; `context` is `auto`, `current_turn` or `all_turns` |
 | `text` | `{ "verbosity"?: "low"\|"medium"\|"high", "format"?: object }` |
-| `text.format` | `{ "type":"json_schema", "name":string, "schema":object, "strict"?:boolean }`; strict defaults to `true` |
+| `text.format` | `{"type":"text"}` or `{ "type":"json_schema", "name":string, "schema":object, "strict"?:boolean }`; schema strict defaults to `true` |
 | `service_tier` | `"auto"` or a tier supported by the model |
 | `prompt_cache_key` | Optional string; defaults to the request session ID |
 | `include` | Array of `"reasoning.encrypted_content"`, `"web_search_call.action.sources"`, `"web_search_call.results"`; encrypted reasoning is always requested |
 
 Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected model in the startup catalog are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
+
+`reasoning.generate_summary` is accepted as a deprecated alias of `summary`. Explicit `reasoning.context` values are preserved; `auto` and `current_turn` select regular Responses because Lite requires `all_turns`. Omitted/null context retains the Lite default of `all_turns` (and is omitted for standard requests). See the [SDK compatibility suite and parameter audit](sdk-compatibility.md).
 
 Message inputs accept `role` (`user`, `assistant`, `system`, `developer`) and string or Codex content arrays. Text and image content, reasoning, function/custom calls and their outputs, web-search calls and Codex compaction items are supported. Functions/custom tools run in the caller, which submits their outputs in the next request.
 

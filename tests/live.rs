@@ -194,7 +194,7 @@ async fn real_subscription_http_ws_lite_and_compaction() {
 }
 
 #[tokio::test]
-#[ignore = "requires codex login and tests/requirements.txt; consumes subscription usage"]
+#[ignore = "requires codex login and uv sync --locked --group live; consumes subscription usage"]
 async fn real_subscription_openai_sdk() {
     let prerequisites = python::command()
         .args(["-c", "import openai, aiortc, websockets"])
@@ -203,7 +203,7 @@ async fn real_subscription_openai_sdk() {
         .expect("start Python; set CODEX_TEST_PYTHON if needed");
     assert!(
         prerequisites.status.success(),
-        "Install tests/requirements.txt for CODEX_TEST_PYTHON (see docs/e2e.md): {}",
+        "Run uv sync --locked --group live (see docs/e2e.md): {}",
         String::from_utf8_lossy(&prerequisites.stderr)
     );
     let gateway = live_gateway::LiveGateway::start().await;

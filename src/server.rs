@@ -150,8 +150,9 @@ async fn create(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let lite = input.uses_responses_lite(model);
     let request = input.into_codex(model, &session_id)?;
-    if model.use_responses_lite {
+    if lite {
         let mut headers = forward_request_headers(&headers);
         headers.insert(
             "x-openai-internal-codex-responses-lite",
@@ -460,7 +461,7 @@ async fn compact(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let lite = model.use_responses_lite;
+    let lite = input.uses_responses_lite(model);
     let mut request = input.into_codex(model, &session_id)?;
     request
         .input

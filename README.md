@@ -66,6 +66,8 @@ cargo test-all
 ```
 
 This includes real subscription E2E and consumes usage.
-For local tests only: `cargo test --workspace --locked`.
+For local Rust tests: `cargo test --workspace --locked`.
+For official Python SDK compatibility: `uv sync --locked && cargo sdk`.
+See [SDK coverage and parameter limitations](docs/sdk-compatibility.md).
 
 Apache-2.0 · [Third-party notices](NOTICE)

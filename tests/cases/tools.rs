@@ -1,6 +1,6 @@
 use super::*;
 
-const IMAGE_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==";
+pub(super) const IMAGE_PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==";
 fn image_response() -> Value {
     json!({"created":1778832973u64,"data":[{"b64_json":IMAGE_PNG,"generation_id":"gen-test","future_item":42}],"output_format":"png","usage":{"total_tokens":12},"future_response":{"preserved":true}})
 }
@@ -417,7 +417,7 @@ async fn tools_use_original_lite_serializer_and_reject_unavailable_hosted_servic
 }
 
 #[tokio::test]
-#[ignore = "requires tests/requirements.txt; uses a local fake upstream"]
+#[ignore = "requires uv sync --locked; uses a local fake upstream"]
 async fn actual_openai_python_sdk_images_and_web_search() {
     let search = json!({"type":"web_search_call","id":"ws_1","status":"completed","action":{"type":"search","query":"Codex"}});
     let h = Harness::new(vec![

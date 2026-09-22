@@ -1,18 +1,19 @@
 //! Shared interpreter and dependencies for official SDK tests.
 pub fn command() -> tokio::process::Command {
-    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-        ".venv/Scripts/python.exe"
+    let mut command = if let Some(interpreter) = std::env::var_os("CODEX_TEST_PYTHON") {
+        tokio::process::Command::new(interpreter)
     } else {
-        ".venv/bin/python"
-    });
-    let interpreter = std::env::var_os("CODEX_TEST_PYTHON").unwrap_or_else(|| {
-        if local.is_file() {
-            local.into_os_string()
-        } else {
-            "python3".into()
-        }
-    });
-    let mut command = tokio::process::Command::new(interpreter);
+        let mut command = tokio::process::Command::new("uv");
+        command.args([
+            "run",
+            "--project",
+            env!("CARGO_MANIFEST_DIR"),
+            "--locked",
+            "--no-sync",
+            "python",
+        ]);
+        command
+    };
     command.env("PYTHONDONTWRITEBYTECODE", "1");
     command.kill_on_drop(true);
     command

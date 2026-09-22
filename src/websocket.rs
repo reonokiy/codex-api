@@ -166,6 +166,7 @@ fn adapt_public_request(
         .iter()
         .find(|m| m.slug == input.model)
         .ok_or_else(|| GatewayError::invalid("model is absent from the gateway model catalog"))?;
+    let lite = input.uses_responses_lite(model);
     let request = input.into_codex(model, session)?;
     let mut wire = ResponseCreateWsRequest::from(&request);
     if let Some(previous) = previous {
@@ -189,7 +190,7 @@ fn adapt_public_request(
                 .map_err(|e| GatewayError::invalid(format!("invalid client_metadata: {e}")))?,
         );
     }
-    if model.use_responses_lite {
+    if lite {
         wire.client_metadata.get_or_insert_default().insert(
             "ws_request_header_x_openai_internal_codex_responses_lite".into(),
             "true".into(),

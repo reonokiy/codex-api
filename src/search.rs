@@ -9,9 +9,7 @@ use axum::{
     http::HeaderMap,
     response::Response,
 };
-use codex_api::{
-    Reasoning, ReasoningContext, SearchCommands, SearchInput, SearchRequest, SearchSettings,
-};
+use codex_api::{Reasoning, SearchCommands, SearchInput, SearchRequest, SearchSettings};
 use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
@@ -32,22 +30,15 @@ struct Input {
 struct SearchReasoning {
     effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     summary: Option<codex_protocol::config_types::ReasoningSummary>,
-    context: Option<String>,
+    context: Option<crate::request::ReasoningContextInput>,
 }
 impl SearchReasoning {
-    fn into_codex(self) -> Result<Reasoning, GatewayError> {
-        let context = match self.context.as_deref() {
-            None => None,
-            Some("auto") => Some(ReasoningContext::Auto),
-            Some("current_turn") => Some(ReasoningContext::CurrentTurn),
-            Some("all_turns") => Some(ReasoningContext::AllTurns),
-            _ => return Err(GatewayError::invalid("unsupported reasoning.context")),
-        };
-        Ok(Reasoning {
+    fn into_codex(self) -> Reasoning {
+        Reasoning {
             effort: self.effort,
             summary: self.summary,
-            context,
-        })
+            context: self.context.map(Into::into),
+        }
     }
 }
 
@@ -81,10 +72,7 @@ pub async fn search(
         Ok(ToolRequest::Search(Box::new(SearchRequest {
             id: input.id,
             model: input.model,
-            reasoning: input
-                .reasoning
-                .map(SearchReasoning::into_codex)
-                .transpose()?,
+            reasoning: input.reasoning.map(SearchReasoning::into_codex),
             input: content,
             commands: input.commands,
             settings: input.settings,

@@ -18,15 +18,14 @@ Install the test clients:
 
 ```sh
 python3 scripts/fetch-codex-baseline.py
-python3 -m venv .venv
-.venv/bin/python -m pip install -r tests/requirements.txt
+uv sync --locked --group live
 ```
 
-Alternatively, use `uv venv .venv` and
-`uv pip install --python .venv/bin/python -r tests/requirements.txt`.
-Cargo automatically uses `.venv/bin/python` (`.venv/Scripts/python.exe` on Windows).
-`CODEX_TEST_PYTHON` overrides the interpreter; without a virtual environment it
-falls back to `python3`. The CLI fixtures currently require the pinned Linux
+Python dependencies are managed by `pyproject.toml` and `uv.lock`. For SDK tests
+without live Realtime media, `uv sync --locked` is sufficient. Cargo launches
+Python through `uv run --locked --no-sync`; `CODEX_TEST_PYTHON` can override the
+interpreter for diagnostics. Run `uv sync` explicitly before testing.
+The CLI fixtures currently require the pinned Linux
 x86_64 release binary. `.venv/`, cached clients and reports are excluded from Git.
 
 No manually running gateway or gateway API key is needed. Each real test loads
@@ -40,6 +39,7 @@ set `CODEX_GATEWAY_LIVE_URL` and `CODEX_GATEWAY_API_KEY` instead.
 | Command | Scope |
 | --- | --- |
 | `cargo test --workspace --locked` | Local tests, without real credentials or upstream usage |
+| `cargo sdk` | Official Python SDK compatibility suite against local fixtures; no account needed |
 | `cargo e2e` | Both real subscription suites, with automatic gateway lifecycle |
 | `cargo e2e real_subscription_openai_sdk` | Official SDK real-upstream suite only |
 | `cargo test --locked --test gateway actual_ -- --ignored` | Official-client tests against fake upstreams |
@@ -73,3 +73,5 @@ retained in the local report.
 Direct Platform-key services, account mutations, microphone transcription and
 interruptions are outside the real suite. Passing the command means the
 implemented suite passed, not that every native endpoint or entitlement was tested.
+
+Detailed SDK coverage and parameter limitations: [SDK compatibility](sdk-compatibility.md).

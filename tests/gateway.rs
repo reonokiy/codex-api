@@ -38,6 +38,7 @@ struct Fake {
     image_paths: Arc<Mutex<Vec<String>>>,
     cli_image_path: Arc<Mutex<Option<String>>>,
     cli_turn: Arc<std::sync::atomic::AtomicUsize>,
+    sdk_tool_roundtrip: Arc<std::sync::atomic::AtomicBool>,
 }
 async fn upstream(State(fake): State<Fake>, headers: HeaderMap, bytes: Bytes) -> Response {
     fake.http_bodies.lock().unwrap().push(bytes.to_vec());
@@ -47,6 +48,14 @@ async fn upstream(State(fake): State<Fake>, headers: HeaderMap, bytes: Bytes) ->
         bytes.to_vec()
     };
     let value: Value = serde_json::from_slice(&data).unwrap();
+    let tool_result = value["input"].as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            matches!(
+                item["type"].as_str(),
+                Some("function_call_output" | "custom_tool_call_output")
+            )
+        })
+    });
     fake.received.lock().unwrap().push((headers, value));
     if fake.status != StatusCode::OK {
         return Response::builder()
@@ -68,7 +77,16 @@ async fn upstream(State(fake): State<Fake>, headers: HeaderMap, bytes: Bytes) ->
         let call = json!({"type":"function_call","id":format!("fc_image_{turn}"),"call_id":format!("call_image_{turn}"),"namespace":"image_gen","name":"imagegen","arguments":args.to_string(),"status":"completed"});
         vec![json!({"type":"response.output_item.done","output_index":0,"item":call}), completed(vec![call])]
     });
-    for event in cli_events.as_ref().unwrap_or(&fake.events) {
+    let continuation = (tool_result
+        && fake
+            .sdk_tool_roundtrip
+            .load(std::sync::atomic::Ordering::SeqCst))
+    .then(events);
+    for event in cli_events
+        .as_ref()
+        .or(continuation.as_ref())
+        .unwrap_or(&fake.events)
+    {
         wire.push_str(&format!(
             "event: {}\ndata: {event}\n\n",
             event["type"].as_str().unwrap()
@@ -197,6 +215,7 @@ impl Harness {
             image_paths: Default::default(),
             cli_image_path: Default::default(),
             cli_turn: Default::default(),
+            sdk_tool_roundtrip: Default::default(),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_url = format!("http://{}", listener.local_addr().unwrap());
@@ -1360,3 +1379,6 @@ use tool_cases::{upstream_image, upstream_search};
 
 #[path = "cases/realtime.rs"]
 mod realtime_cases;
+
+#[path = "cases/response_types.rs"]
+mod response_type_cases;
