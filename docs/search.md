@@ -1,6 +1,7 @@
 # Native standalone search
 
-`POST /codex/alpha/search` · Alias: `/backend-api/codex/alpha/search`  
+`POST /codex/alpha/search` · Aliases: `/backend-api/codex/alpha/search`, `/v1/alpha/search`
+
 [Common rules](common.md)
 
 This is Codex's `web.run` transport, not an OpenAI public REST API. For official SDK-compatible hosted search, use [Responses `web_search`](responses.md#tools).
