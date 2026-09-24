@@ -32,6 +32,7 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/v1/files", post(crate::files::create))
         .route("/codex/memories/trace_summarize", post(crate::memories::summarize))
         .route("/backend-api/codex/memories/trace_summarize", post(crate::memories::summarize))
+        .route("/v1/alpha/search", post(crate::search::search))
         .route("/codex/alpha/search", post(crate::search::search))
         .route("/backend-api/codex/alpha/search", post(crate::search::search))
         .route("/v1/images/generations", post(crate::images::generate))
