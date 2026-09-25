@@ -19,6 +19,6 @@ Codex session/routing metadata is forwarded, including `session-id`, `thread-id`
 
 Always SSE with native event payloads, including unknown event fields. Unlike `/v1/responses`, this endpoint does not assemble or rewrite terminal `response.output`. The original Codex parser validates the stream; interrupted streams never become synthetic success responses.
 
-Codex 0.155.1 performs remote compaction through native Responses using a `compaction_trigger` input item. The separate [compact facade](responses-compact.md) is for applications that want a single JSON result.
+Codex 0.157.0 performs remote compaction through native Responses using a `compaction_trigger` input item. The separate [compact facade](responses-compact.md) is for applications that want a single JSON result.
 
 Local shell, filesystem, custom and MCP tools still execute in the calling Codex. Native [images](images-generations.md) and [standalone search](search.md) use their corresponding gateway routes.

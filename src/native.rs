@@ -191,10 +191,8 @@ pub async fn handle(
             .try_acquire_owned()
             .map_err(|_| busy())?;
         let endpoint = match (origin, path.split('?').next().unwrap_or_default()) {
-            (Origin::Codex, "guardian") => Some(codex_api::ResponsesEndpoint::Guardian),
-            (Origin::Codex, "guardian-classifier") => {
-                Some(codex_api::ResponsesEndpoint::GuardianClassifier)
-            }
+            (Origin::Codex, "guardian") => Some("/guardian"),
+            (Origin::Codex, "guardian-classifier") => Some("/guardian-classifier"),
             _ => None,
         };
         if let Some(endpoint) = endpoint {
@@ -229,7 +227,7 @@ pub async fn handle(
             } else {
                 HeaderMap::new()
             };
-            codex_api::RealtimeWebsocketClient::new(provider)
+            codex_api::RealtimeWebsocketClient::new(provider, gateway.backend.factory.clone())
                 .connect_raw(&url, upstream_headers, defaults)
                 .await
                 .map_err(GatewayError::from_api)

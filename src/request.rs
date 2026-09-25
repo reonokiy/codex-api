@@ -80,9 +80,11 @@ pub struct JsonFormat {
 }
 
 impl CreateResponse {
-    /// Lite requires all-turn reasoning. Other explicit modes use regular Responses.
+    /// Lite requires all-turn reasoning and does not execute hosted web search.
+    /// Keep hosted tools on regular Responses, as with other explicit reasoning modes.
     pub fn uses_responses_lite(&self, model: &ModelInfo) -> bool {
         model.use_responses_lite
+            && !self.tools.iter().any(|tool| tool["type"] == "web_search")
             && !matches!(
                 self.reasoning
                     .as_ref()

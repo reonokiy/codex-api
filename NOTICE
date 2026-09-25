@@ -2,7 +2,7 @@ Codex Responses Gateway
 
 This project uses Rust crates from OpenAI Codex:
 https://github.com/openai/codex
-Revision: be2951ea34f0d295ed0becf97079f92fa5f6950e
+Revision: 00c972ed5d6ff6499317fd41b7f23605b8e6850d
 Copyright OpenAI. Licensed under the Apache License, Version 2.0.
 The vendored codex-api crate has small raw transport extensions documented in
 vendor/raw-transport.patch. src/lite_instructions.rs is copied from the same revision's

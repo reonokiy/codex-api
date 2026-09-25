@@ -90,7 +90,7 @@ pub async fn create(
             return Err(GatewayError::auth());
         }
         // This is the pool Codex constructs in core/src/session/session.rs for uploads.
-        // The captured auth belongs to this entire pipeline; never replay a partially uploaded file.
+        // The captured auth belongs to this entire pipeline; only blob PUT retries reopen the same buffered bytes.
         let pool = RouteAwareClientPool::new_without_request_logging(
             gateway.backend.factory.clone(),
             ClientRouteClass::Api,
@@ -102,7 +102,10 @@ pub async fn create(
             &pool,
             filename,
             size,
-            futures::stream::once(async move { Ok(bytes) }),
+            || {
+                let bytes = bytes.clone();
+                async move { Ok(futures::stream::once(async move { Ok(bytes) })) }
+            },
             None,
         )
         .await
@@ -128,6 +131,9 @@ pub async fn create(
 
 fn file_error(error: OpenAiFileError) -> GatewayError {
     match error {
+        OpenAiFileError::ReadContents(_) => {
+            GatewayError::internal("could not reopen upload contents")
+        }
         OpenAiFileError::UnexpectedStatus { status, body, .. } => {
             let content_type = if serde_json::from_str::<Value>(&body).is_ok() {
                 "application/json"

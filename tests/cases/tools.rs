@@ -54,6 +54,7 @@ async fn images_match_original_client_and_preserve_complete_responses() {
         &HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         &provider.url_for_path("images/generations"),
         codex_http_client::ClientRouteClass::Api,
+        codex_login::default_client::ClientRedirectPolicy::Default,
     )
     .unwrap();
     let original = codex_api::ImagesClient::new(
@@ -243,13 +244,9 @@ async fn images_preserve_upstream_failures_and_release_slots_after_timeout() {
 #[ignore = "requires pinned official CLI; uses a local fake image upstream"]
 async fn actual_codex_cli_images_and_standalone_web_search_through_gateway() {
     use base64::Engine;
-    let binary = format!(
-        "{}/.cache/codex-baseline/rust-v{}/bin/codex-x86_64-unknown-linux-musl",
-        env!("CARGO_MANIFEST_DIR"),
-        codex_api_gateway::CODEX_RELEASE
-    );
+    let binary = support::cli::binary().await;
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(20)).await;
-    let home = tempfile::tempdir().unwrap();
+    let home = support::cli::home();
     let work = tempfile::tempdir().unwrap();
     let input = work.path().join("input.png");
     std::fs::write(
@@ -306,7 +303,8 @@ http_headers = {{ "x-openai-actor-authorization" = "gateway" }}
     .unwrap();
     assert!(
         output.status.success(),
-        "{}",
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
@@ -381,19 +379,32 @@ async fn tools_use_original_lite_serializer_and_reject_unavailable_hosted_servic
         .into_iter()
         .find(|m| m.use_responses_lite)
         .unwrap();
-    let response = reqwest::Client::new()
-        .post(format!("{}/v1/responses", h.url))
-        .bearer_auth("client-key")
-        .json(&json!({"model":lite.slug,"input":"Search","tools":tools}))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 200);
-    {
+    for (requested, use_lite) in [(tools.clone(), false), (json!([tools[1], tools[2]]), true)] {
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/responses", h.url))
+            .bearer_auth("client-key")
+            .json(&json!({"model":lite.slug,"input":"Search","tools":requested}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
         let received = h.fake.received.lock().unwrap();
-        let encoded = &received.last().unwrap().1["input"][0]["tools"];
-        assert_eq!(encoded[0], tools[0]);
-        assert_eq!(encoded[1]["type"], "namespace");
+        let (headers, body) = received.last().unwrap();
+        assert_eq!(
+            headers.contains_key("x-openai-internal-codex-responses-lite"),
+            use_lite
+        );
+        let encoded = if use_lite {
+            &body["input"][0]["tools"]
+        } else {
+            &body["tools"]
+        };
+        if !use_lite {
+            assert_eq!(encoded[0], tools[0]);
+        }
+        let namespace_index = usize::from(!use_lite);
+        assert_eq!(encoded[namespace_index]["type"], "namespace");
+        assert_eq!(encoded[namespace_index]["name"], "local");
         assert!(encoded.to_string().contains("regex"));
     }
     for tool in [
@@ -413,7 +424,7 @@ async fn tools_use_original_lite_serializer_and_reject_unavailable_hosted_servic
             .unwrap();
         assert_eq!(response.status(), 400);
     }
-    assert_eq!(h.fake.received.lock().unwrap().len(), 1);
+    assert_eq!(h.fake.received.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -428,35 +439,51 @@ async fn actual_openai_python_sdk_images_and_web_search() {
     ], StatusCode::OK, false, Duration::from_secs(10)).await;
     let output = tokio::time::timeout(
         Duration::from_secs(30),
-        support::python::command()
-            .args([
-                "-c",
-                include_str!("../support/openai_sdk.py"),
-                &h.url,
-                &h.model,
-            ])
+        support::python::pytest("test_tools.py", "artifacts/sdk/tools.json")
+            .env(
+                "CODEX_SDK_TEST_CONFIG",
+                json!({"text":h.url,"models":[h.model]}).to_string(),
+            )
             .kill_on_drop(true)
             .output(),
     )
     .await
     .unwrap()
     .unwrap();
+    print!("{}", String::from_utf8_lossy(&output.stdout));
     assert!(
         output.status.success(),
-        "{}",
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
         *h.fake.image_paths.lock().unwrap(),
         vec!["/images/generations", "/images/edits"]
     );
-    assert!(
-        h.fake.received.lock().unwrap().last().unwrap().1["tools"]
-            .to_string()
-            .contains("web_search")
-    );
     let received = h.fake.received.lock().unwrap();
-    for (headers, body) in received.iter().take(2) {
+    let searches = received
+        .iter()
+        .filter(|(_, body)| {
+            body["tools"]
+                .as_array()
+                .is_some_and(|tools| tools.iter().any(|tool| tool["type"] == "web_search"))
+        })
+        .count();
+    assert_eq!(
+        searches, 2,
+        "both regular and streaming search must reach upstream"
+    );
+    let images: Vec<_> = received
+        .iter()
+        .filter(|(headers, _)| headers.contains_key("x-codex-image-turn-id"))
+        .collect();
+    assert_eq!(
+        images.len(),
+        2,
+        "generation and edit must carry image turn IDs"
+    );
+    for (headers, body) in images {
         assert!(uuid::Uuid::parse_str(headers["x-codex-image-turn-id"].to_str().unwrap()).is_ok());
         assert_eq!(body["background"], "auto");
         assert_eq!(body["quality"], "auto");

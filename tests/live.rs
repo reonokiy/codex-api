@@ -1,4 +1,8 @@
 //! Opt-in real-subscription smoke test. Uses only a local gateway key, never account tokens.
+#[path = "support/cli.rs"]
+mod cli;
+#[path = "cases/live_cli.rs"]
+mod cli_cases;
 #[path = "support/live_gateway.rs"]
 mod live_gateway;
 #[path = "support/python.rs"]
@@ -197,7 +201,10 @@ async fn real_subscription_http_ws_lite_and_compaction() {
 #[ignore = "requires codex login and uv sync --locked --group live; consumes subscription usage"]
 async fn real_subscription_openai_sdk() {
     let prerequisites = python::command()
-        .args(["-c", "import openai, aiortc, websockets"])
+        .args([
+            "-c",
+            "import openai, aiortc, websockets, pytest, pytest_asyncio",
+        ])
         .output()
         .await
         .expect("start Python; set CODEX_TEST_PYTHON if needed");
@@ -209,23 +216,20 @@ async fn real_subscription_openai_sdk() {
     let gateway = live_gateway::LiveGateway::start().await;
     let report = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("artifacts/e2e/sdk/live-results.json");
-    let output = tokio::time::timeout(
-        Duration::from_secs(1200),
-        python::command()
-            .env("CODEX_GATEWAY_API_KEY", &gateway.key)
-            .args([
-                "-c",
-                include_str!("support/live_sdk.py"),
-                "--url",
-                &gateway.url,
-                "--report",
-            ])
-            .arg(&report)
-            .output(),
-    )
-    .await
-    .expect("SDK E2E exceeded 20 minutes")
-    .expect("start SDK E2E helper");
+    let mut command = python::pytest("test_live.py", "artifacts/e2e/sdk/live-results.json");
+    command.env("CODEX_GATEWAY_API_KEY", &gateway.key).args([
+        "--live-sdk",
+        "--gateway-url",
+        &gateway.url,
+    ]);
+    if let Ok(filter) = std::env::var("CODEX_SDK_LIVE_FILTER") {
+        command.args(["-k", &filter]);
+    }
+    let output = tokio::time::timeout(Duration::from_secs(1200), command.output())
+        .await
+        .expect("SDK E2E exceeded 20 minutes")
+        .expect("start SDK E2E helper");
+    print!("{}", String::from_utf8_lossy(&output.stdout));
     assert!(
         output.status.success(),
         "SDK E2E failed; report: {}\n{}\n{}",
@@ -238,4 +242,53 @@ fn save(results: &[Value]) {
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts/protocol");
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join("live-results.json"),serde_json::to_vec_pretty(&json!({"codex_revision":codex_api_gateway::CODEX_REV,"synthetic":false,"results":results})).unwrap()).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires codex login and pytest; consumes subscription usage for each advertised effort"]
+async fn real_subscription_reasoning_levels() {
+    let gateway = live_gateway::LiveGateway::start().await;
+    let catalog = gateway
+        .model_catalog
+        .as_ref()
+        .expect("effort discovery requires the Cargo-managed local gateway");
+    let mut cases = Vec::new();
+    for name in ["gpt-6-sol", "gpt-6-luna"] {
+        let model = catalog
+            .iter()
+            .find(|model| model.slug == name)
+            .expect("model missing from account catalog");
+        assert!(!model.supported_reasoning_levels.is_empty());
+        for level in &model.supported_reasoning_levels {
+            cases.push(json!({"model":name,"effort":level.effort,
+                "resolved_effort":model.resolve_reasoning_effort(level.effort.clone())}));
+        }
+    }
+    println!(
+        "Advertised effort cases: {}",
+        serde_json::to_string(&cases).unwrap()
+    );
+    let output = tokio::time::timeout(
+        Duration::from_secs(1800),
+        python::pytest(
+            "test_reasoning.py",
+            "artifacts/e2e/sdk/reasoning-results.json",
+        )
+        .env("CODEX_GATEWAY_API_KEY", &gateway.key)
+        .env(
+            "CODEX_SDK_REASONING_CASES",
+            serde_json::to_string(&cases).unwrap(),
+        )
+        .args(["--live-sdk", "--gateway-url", &gateway.url])
+        .output(),
+    )
+    .await
+    .expect("reasoning matrix exceeded 30 minutes")
+    .expect("start pytest");
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    assert!(
+        output.status.success(),
+        "SDK reasoning matrix failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

@@ -22,7 +22,7 @@ The public endpoint accepts [Responses fields](responses.md), plus:
 | `stream_id` | Opaque lane identifier, preserved |
 | `client_metadata` | Object of string values |
 
-The public adapter uses the original Codex WebSocket serializer and adds Responses Lite metadata when needed. A `response.create` frame already containing `stream:true` is treated as a prepared native frame and preserved instead of adapted.
+The public adapter uses the original Codex WebSocket serializer and adds Responses Lite metadata when needed. Hosted `web_search` uses regular Responses for both HTTP and WebSocket requests. A `response.create` frame already containing `stream:true` is treated as a prepared native frame and preserved instead of adapted.
 
 Native paths preserve text frames unchanged. Other event types, such as cancellation/steering, pass through to the upstream without public-schema conversion. Binary messages are relayed; ping/pong is handled independently by each connection.
 

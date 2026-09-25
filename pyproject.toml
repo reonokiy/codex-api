@@ -9,7 +9,17 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
 live = ["aiortc==1.15.0"]
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests/sdk"]
+addopts = "--strict-markers --strict-config"
+asyncio_mode = "strict"
+markers = ["live: real upstream calls requiring explicit --live-sdk opt-in"]

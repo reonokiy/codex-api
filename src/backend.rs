@@ -59,14 +59,14 @@ impl Backend {
         &self,
         headers: http::HeaderMap,
     ) -> Result<(codex_websocket_client::WebSocketConnection, http::HeaderMap), GatewayError> {
-        self.connect_websocket_endpoint(headers, codex_api::ResponsesEndpoint::Responses, None)
+        self.connect_websocket_endpoint(headers, "/responses", None)
             .await
     }
 
     pub async fn connect_websocket_endpoint(
         &self,
         headers: http::HeaderMap,
-        endpoint: codex_api::ResponsesEndpoint,
+        endpoint: &str,
         query: Option<&str>,
     ) -> Result<(codex_websocket_client::WebSocketConnection, http::HeaderMap), GatewayError> {
         let mut recovery = self.auth.unauthorized_recovery();
@@ -100,13 +100,13 @@ impl Backend {
             if *changes.borrow() != revision {
                 continue;
             }
-            let client = codex_api::ResponsesWebsocketClient::new(resolved, api_auth)
-                .with_endpoint(endpoint);
+            let client = codex_api::ResponsesWebsocketClient::new(resolved, api_auth);
             match client
                 .connect_raw_with_query(
                     &self.factory,
                     headers.clone(),
                     codex_login::default_client::default_headers(),
+                    endpoint,
                     query,
                 )
                 .await
@@ -186,27 +186,23 @@ impl Backend {
                 continue;
             }
             let url = codex_api::ModelsClient::<ReqwestTransport>::request_url(&resolved, version);
-            let http = create_client_for_route(&self.factory, &url, ClientRouteClass::Api)
-                .map_err(GatewayError::internal)?;
-            let catalog = Arc::new(OnceLock::new());
+            let http = create_client_for_route(
+                &self.factory,
+                &url,
+                ClientRouteClass::Api,
+                codex_login::default_client::ClientRedirectPolicy::Default,
+            )
+            .map_err(GatewayError::internal)?;
             let client = codex_api::ModelsClient::new(
-                crate::transport::ModelCatalogTransport {
-                    inner: ReqwestTransport::from_http_client(http),
-                    body: catalog.clone(),
-                },
+                ReqwestTransport::from_http_client(http),
                 resolved,
                 api_auth,
             );
-            match client.list_models(url, headers.clone()).await {
-                Ok((_, etag)) => {
-                    return Ok((
-                        catalog
-                            .get()
-                            .cloned()
-                            .ok_or_else(|| GatewayError::internal("missing model catalog"))?,
-                        etag,
-                    ));
-                }
+            match client
+                .list_models_raw(url, headers.clone(), Some(16 * 1024 * 1024))
+                .await
+            {
+                Ok(result) => return Ok(result),
                 Err(ApiError::Transport(ref e))
                     if self.provider.is_recoverable_auth_error(e) && recovery.has_next() =>
                 {
@@ -252,6 +248,7 @@ impl Backend {
                 &self.factory,
                 &provider.url_for_path(request.path()),
                 ClientRouteClass::Api,
+                codex_login::default_client::ClientRedirectPolicy::Default,
             )
             .map_err(GatewayError::internal)?;
             let captured = Arc::new(OnceLock::new());
@@ -265,12 +262,14 @@ impl Backend {
                     codex_api::ImagesClient::new(transport, provider, api_auth)
                         .generate(request, headers.clone())
                         .await
+                        .map_err(|error| error.into_parts().0)
                         .map(|_| ())
                 }
                 ToolRequest::Edit(request) => {
                     codex_api::ImagesClient::new(transport, provider, api_auth)
                         .edit(request, headers.clone())
                         .await
+                        .map_err(|error| error.into_parts().0)
                         .map(|_| ())
                 }
                 ToolRequest::Search(request) => {
@@ -344,6 +343,7 @@ impl Backend {
                 &self.factory,
                 &resolved.url_for_path("/responses"),
                 ClientRouteClass::Api,
+                codex_login::default_client::ClientRedirectPolicy::Default,
             )
             .map_err(GatewayError::internal)?;
             let (sender, receiver) = mpsc::channel(8);

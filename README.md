@@ -3,7 +3,7 @@
 A gateway that uses your ChatGPT subscription through the Codex Rust libraries.
 
 Supports Responses, streaming, WebSocket, images, files, search and Realtime.
-Built on Codex **0.155.1** and Rust **1.95.0**.
+Built on Codex **0.157.0** and Rust **1.95.0**.
 
 The gateway loads your account's model catalog at startup, including
 `gpt-6-sol` and `gpt-6-luna` when available. Restart to refresh the catalog;
@@ -39,13 +39,22 @@ cargo run --locked --release -- --listen 127.0.0.1:8080
 
 ## Use
 
-Point the OpenAI Python SDK at the gateway:
+Generate text with the official OpenAI Python SDK:
+
+```sh
+export CODEX_GATEWAY_API_KEY='your-gateway-key'
+uv run --locked python examples/generate.py
+```
+
+The [runnable example](examples/generate.py) defaults to
+`http://127.0.0.1:8080/v1` and `gpt-6-sol`. Set `OPENAI_BASE_URL` or
+`OPENAI_MODEL` to change them. The actual API call is:
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="your-gateway-key")
-response = client.responses.create(model="gpt-5.5", input="Hello")
+response = client.responses.create(model="gpt-6-sol", input="Hello")
 print(response.output_text)
 ```
 
@@ -67,7 +76,20 @@ cargo test-all
 
 This includes real subscription E2E and consumes usage.
 For local Rust tests: `cargo test --workspace --locked`.
-For official Python SDK compatibility: `uv sync --locked && cargo sdk`.
+For official clients against local fixtures: `cargo setup && cargo test --locked --test gateway actual_ -- --ignored`.
+For real SDK calls: `cargo e2e real_subscription_openai_sdk`; for another actual Codex CLI: `cargo e2e real_subscription_codex_cli`.
+SDK cases use pytest and pytest-asyncio; Cargo manages gateway fixtures and invokes pytest.
+The simplest real generation test is
+[`test_generate_text`](tests/sdk/test_live.py), which calls `responses.create`
+and checks the returned text. Against a gateway already running locally:
+
+```sh
+CODEX_GATEWAY_LIVE_URL=http://127.0.0.1:8080 \
+  uv run --locked pytest tests/sdk/test_live.py::test_generate_text --live-sdk -v
+```
+
+This uses the `CODEX_GATEWAY_API_KEY` exported above. `cargo e2e real_subscription_openai_sdk` also includes
+this test and starts the gateway automatically.
 See [SDK coverage and parameter limitations](docs/sdk-compatibility.md).
 
 Apache-2.0 · [Third-party notices](NOTICE)

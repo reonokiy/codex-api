@@ -8,7 +8,7 @@
  pub(crate) mod realtime_call;
  pub(crate) mod realtime_websocket;
  pub(crate) mod responses;
-@@ -11,11 +12,13 @@
+@@ -12,11 +13,13 @@
  pub use images::ImagesClient;
  pub use memories::MemoriesClient;
  pub use models::ModelsClient;
@@ -75,16 +75,16 @@
 +}
 --- a/src/endpoint/realtime_websocket/methods.rs
 +++ b/src/endpoint/realtime_websocket/methods.rs
-@@ -60,6 +60,8 @@
+@@ -62,6 +62,8 @@
  const OPENAI_REALTIME_API_BASE_URL: &str = "https://api.openai.com/v1";
  const MAX_ACTIVE_TRANSCRIPT_BYTES: usize = 8 * 1024;
  const TRUNCATED_TRANSCRIPT_PREFIX: &str = "…";
 +
-+pub type RealtimeRawWebsocketConnection = WebSocketStream<MaybeTlsStream<TcpStream>>;
++pub type RealtimeRawWebsocketConnection = WebSocketConnection;
  
  struct WsStream {
      tx_command: mpsc::Sender<WsCommand>,
-@@ -791,6 +793,39 @@
+@@ -856,6 +858,39 @@
          self
      }
  
@@ -124,42 +124,10 @@
      pub async fn connect(
          &self,
          config: RealtimeSessionConfig,
-@@ -946,38 +981,23 @@
+@@ -1014,17 +1049,83 @@
          session_initialization: RealtimeSessionInitialization,
          transcript_state: RealtimeTranscriptState,
      ) -> Result<RealtimeWebsocketConnection, ApiError> {
--        ensure_rustls_crypto_provider();
--
--        let mut request = ws_url
--            .as_str()
--            .into_client_request()
--            .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
--        let headers = merge_request_headers(
--            &self.provider.headers,
--            with_session_id_header(extra_headers, config.session_id.as_deref())?,
--            default_headers,
--        );
--        request.headers_mut().extend(headers);
--
--        info!("connecting realtime websocket: {ws_url}");
--        // Realtime websocket TLS should honor the same custom-CA env vars as the rest of Codex's
--        // outbound HTTPS and websocket traffic.
--        let connector = maybe_build_rustls_client_config_with_custom_ca()
--            .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?
--            .map(tokio_tungstenite::Connector::Rustls);
--        let (stream, response) = tokio_tungstenite::connect_async_tls_with_config(
--            request,
--            Some(websocket_config()),
--            false,
--            connector,
--        )
--        .await
--        .map_err(map_realtime_websocket_connect_error)?;
--        info!(
--            ws_url = %ws_url,
--            status = %response.status(),
--            "realtime websocket connected"
--        );
 +        let (stream, _) = self
 +            .connect_raw_url(
 +                ws_url,
@@ -177,15 +145,47 @@
 +                }
 +                error => error,
 +            })?;
- 
-         let (stream, rx_message) = WsStream::new(stream);
-         let connection = RealtimeWebsocketConnection::new(
-@@ -1018,6 +1038,61 @@
-             connection.events.wait_for_session_started().await?;
-         }
-         Ok(connection)
-+    }
 +
++        let (stream, rx_message) = WsStream::new(stream);
++        let connection = RealtimeWebsocketConnection::new(
++            stream,
++            rx_message,
++            config.event_parser,
++            transcript_state,
++        );
++        let initialize_session = match session_initialization {
++            RealtimeSessionInitialization::NewSession => true,
++            RealtimeSessionInitialization::LegacyWebrtcSideband => {
++                config.event_parser != RealtimeEventParser::FramelessBidi
++            }
++            RealtimeSessionInitialization::ExistingCall => false,
++        };
++        if initialize_session {
++            debug!(
++                session_id = config.session_id.as_deref().unwrap_or("<none>"),
++                "realtime websocket sending session.update"
++            );
++            connection
++                .writer
++                .send_session_update(
++                    config.instructions,
++                    config.initial_items,
++                    config.session_mode,
++                    config.output_modality,
++                    config.voice,
++                    config.delegation_ack_filler,
++                )
++                .await?;
++        }
++        if matches!(
++            session_initialization,
++            RealtimeSessionInitialization::NewSession
++        ) && config.event_parser == RealtimeEventParser::FramelessBidi
++        {
++            connection.events.wait_for_session_started().await?;
++        }
++        Ok(connection)
++    }
 +    async fn connect_raw_url(
 +        &self,
 +        ws_url: Url,
@@ -198,46 +198,85 @@
 +        ),
 +        ApiError,
 +    > {
-+        ensure_rustls_crypto_provider();
-+
-+        let mut request = ws_url
-+            .as_str()
-+            .into_client_request()
-+            .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
+         ensure_rustls_crypto_provider();
+ 
+         let mut request = ws_url
+             .as_str()
+             .into_client_request()
+             .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
+-        let headers = merge_request_headers(
+-            &self.provider.headers,
+-            with_session_id_header(extra_headers, config.session_id.as_deref())?,
+-            default_headers,
+-        );
 +        let headers = merge_request_headers(&self.provider.headers, extra_headers, default_headers);
-+        request.headers_mut().extend(headers);
-+
-+        info!("connecting realtime websocket: {ws_url}");
-+        // Realtime websocket TLS should honor the same custom-CA env vars as the rest of Codex's
-+        // outbound HTTPS and websocket traffic.
-+        let connector = maybe_build_rustls_client_config_with_custom_ca()
-+            .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?
-+            .map(tokio_tungstenite::Connector::Rustls);
-+        let (stream, response) = tokio_tungstenite::connect_async_tls_with_config(
-+            request,
-+            Some(websocket_config()),
-+            false,
-+            connector,
-+        )
-+        .await
-+        .map_err(|error| match error {
-+            WsError::Http(response) => ApiError::Transport(codex_client::TransportError::Http {
-+                status: response.status(),
-+                url: Some(ws_url.to_string()),
-+                headers: Some(response.headers().clone()),
-+                body: response
-+                    .body()
-+                    .as_ref()
-+                    .and_then(|body| String::from_utf8(body.clone()).ok()),
-+            }),
-+            error => map_realtime_websocket_connect_error(error),
-+        })?;
-+        info!(
-+            ws_url = %ws_url,
-+            status = %response.status(),
-+            "realtime websocket connected"
-+        );
-+
+         request.headers_mut().extend(headers);
+ 
+         info!("connecting realtime websocket: {ws_url}");
+@@ -1052,52 +1153,27 @@
+         let (stream, response) = connector
+             .connect(request, websocket_config())
+             .await
+-            .map_err(map_realtime_websocket_connect_error)?;
++            .map_err(|error| match error {
++                WsError::Http(response) => {
++                    ApiError::Transport(codex_client::TransportError::Http {
++                        status: response.status(),
++                        url: Some(ws_url.to_string()),
++                        headers: Some(response.headers().clone()),
++                        body: response
++                            .body()
++                            .as_ref()
++                            .and_then(|body| String::from_utf8(body.clone()).ok()),
++                    })
++                }
++                error => map_realtime_websocket_connect_error(error),
++            })?;
+         info!(
+             ws_url = %ws_url,
+             status = %response.status(),
+             "realtime websocket connected"
+         );
+ 
+-        let (stream, rx_message) = WsStream::new(stream);
+-        let connection = RealtimeWebsocketConnection::new(
+-            stream,
+-            rx_message,
+-            config.event_parser,
+-            transcript_state,
+-        );
+-        let initialize_session = match session_initialization {
+-            RealtimeSessionInitialization::NewSession => true,
+-            RealtimeSessionInitialization::LegacyWebrtcSideband => {
+-                config.event_parser != RealtimeEventParser::FramelessBidi
+-            }
+-            RealtimeSessionInitialization::ExistingCall => false,
+-        };
+-        if initialize_session {
+-            debug!(
+-                session_id = config.session_id.as_deref().unwrap_or("<none>"),
+-                "realtime websocket sending session.update"
+-            );
+-            connection
+-                .writer
+-                .send_session_update(
+-                    config.instructions,
+-                    config.initial_items,
+-                    config.session_mode,
+-                    config.output_modality,
+-                    config.voice,
+-                    config.delegation_ack_filler,
+-                )
+-                .await?;
+-        }
+-        if matches!(
+-            session_initialization,
+-            RealtimeSessionInitialization::NewSession
+-        ) && config.event_parser == RealtimeEventParser::FramelessBidi
+-        {
+-            connection.events.wait_for_session_started().await?;
+-        }
+-        Ok(connection)
 +        Ok((stream, response))
      }
  }
@@ -254,7 +293,7 @@
  pub use methods::RealtimeWebsocketConnection;
 --- a/src/endpoint/responses.rs
 +++ b/src/endpoint/responses.rs
-@@ -152,6 +152,20 @@
+@@ -120,6 +120,20 @@
              .await
      }
  
@@ -277,7 +316,7 @@
          body: EncodedJsonBody,
 --- a/src/endpoint/responses_websocket.rs
 +++ b/src/endpoint/responses_websocket.rs
-@@ -423,6 +423,43 @@
+@@ -411,6 +411,50 @@
          ))
      }
  
@@ -289,8 +328,14 @@
 +        extra_headers: HeaderMap,
 +        default_headers: HeaderMap,
 +    ) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
-+        self.connect_raw_with_query(http_client_factory, extra_headers, default_headers, None)
-+            .await
++        self.connect_raw_with_query(
++            http_client_factory,
++            extra_headers,
++            default_headers,
++            "/responses",
++            None,
++        )
++        .await
 +    }
 +
 +    /// Preserve caller query parameters, including duplicate keys and percent encoding.
@@ -299,11 +344,12 @@
 +        http_client_factory: &HttpClientFactory,
 +        extra_headers: HeaderMap,
 +        default_headers: HeaderMap,
++        path: &str,
 +        query: Option<&str>,
 +    ) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
 +        let mut url = self
 +            .provider
-+            .websocket_url_for_path(self.endpoint.path())
++            .websocket_url_for_path(path)
 +            .map_err(|err| ApiError::Stream(format!("failed to build websocket URL: {err}")))?;
 +        if let Some(query) = query {
 +            let query = match url.query() {
@@ -321,7 +367,7 @@
      /// Opens a WebSocket connection long enough to validate the upgrade response.
      ///
      /// The probe uses the same URL construction, headers, authentication, TLS,
-@@ -508,6 +545,35 @@
+@@ -494,6 +538,35 @@
      http_client_factory: &HttpClientFactory,
      turn_state: Option<Arc<OnceLock<String>>>,
  ) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
@@ -357,7 +403,7 @@
      info!("connecting to websocket: {url}");
  
      let mut request = url
-@@ -534,26 +600,7 @@
+@@ -520,26 +593,7 @@
          }
      };
  
@@ -387,7 +433,7 @@
  fn websocket_config() -> WebSocketConfig {
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -52,11 +52,13 @@
+@@ -53,11 +53,13 @@
  pub use crate::endpoint::ImagesClient;
  pub use crate::endpoint::MemoriesClient;
  pub use crate::endpoint::ModelsClient;

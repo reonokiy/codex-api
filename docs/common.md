@@ -67,4 +67,4 @@ Gateway errors use this shape; `message` describes the failure:
 
 Upstream HTTP failures preserve their status and body, which may be non-JSON, plus headers such as `Retry-After`; transparent native routes preserve all end-to-end headers. Once SSE or WebSocket starts, failures are conveyed as events or connection closure; HTTP 200 alone does not mean generation succeeded.
 
-Public adapters reject unsupported parameters instead of silently pretending to implement them. Native Responses preserves unknown protocol fields; native images/search use the pinned Codex types. Compatibility targets Codex **0.155.1**, not every OpenAI service or future Codex release.
+Public adapters reject unsupported parameters instead of silently pretending to implement them. Native Responses preserves unknown protocol fields; native images/search use the pinned Codex types. Compatibility targets Codex **0.157.0**, not every OpenAI service or future Codex release.

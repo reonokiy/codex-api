@@ -27,7 +27,7 @@
 
 Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected model in the startup catalog are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
 
-`reasoning.generate_summary` is accepted as a deprecated alias of `summary`. Explicit `reasoning.context` values are preserved; `auto` and `current_turn` select regular Responses because Lite requires `all_turns`. Omitted/null context retains the Lite default of `all_turns` (and is omitted for standard requests). See the [SDK compatibility suite and parameter audit](sdk-compatibility.md).
+`reasoning.generate_summary` is accepted as a deprecated alias of `summary`. Explicit `reasoning.context` values are preserved; `auto` and `current_turn` select regular Responses because Lite requires `all_turns`. Omitted/null context retains the Lite default of `all_turns` when the request uses Lite (and is omitted for regular requests). Requests containing hosted `web_search` always use regular Responses, where the hosted tool can execute. See the [SDK compatibility suite and parameter audit](sdk-compatibility.md).
 
 Message inputs accept `role` (`user`, `assistant`, `system`, `developer`) and string or Codex content arrays. Text and image content, reasoning, function/custom calls and their outputs, web-search calls and Codex compaction items are supported. Functions/custom tools run in the caller, which submits their outputs in the next request.
 

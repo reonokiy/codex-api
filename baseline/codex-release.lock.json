@@ -1,15 +1,29 @@
 {
   "repository": "https://github.com/openai/codex.git",
-  "release": "0.155.1",
-  "tag": "rust-v0.155.1",
-  "tag_object": "4e21628f9ec9ee656650cd2b62ef92225725b5ac",
-  "commit": "be2951ea34f0d295ed0becf97079f92fa5f6950e",
-  "published_at": "2026-09-18T20:03:04Z",
-  "release_url": "https://github.com/openai/codex/releases/tag/rust-v0.155.1",
+  "release": "0.157.0",
+  "tag": "rust-v0.157.0",
+  "tag_object": "ac21625ddf7f9dd5f34b2802212cf20295fdff95",
+  "commit": "00c972ed5d6ff6499317fd41b7f23605b8e6850d",
+  "published_at": "2026-09-25T02:31:06Z",
+  "release_url": "https://github.com/openai/codex/releases/tag/rust-v0.157.0",
   "prerelease": false,
+  "companions": [
+    {
+      "asset": "bwrap-x86_64-unknown-linux-musl.tar.gz",
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.157.0/bwrap-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "c42034dc39b5ae1807bf81f59d268ac8534e48e23761206ba9e2a39e57daaa1b",
+      "executable": "codex-resources/bwrap"
+    },
+    {
+      "asset": "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.157.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "47d32419e895c9cddbb664a2890bfb250ef0e3fded3da70e5f2bc61479f1989c",
+      "executable": "codex-code-mode-host"
+    }
+  ],
   "binary": {
     "asset": "codex-x86_64-unknown-linux-musl.tar.gz",
-    "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-x86_64-unknown-linux-musl.tar.gz",
-    "sha256": "a0ef8b2debc3bf747e07b1a039354de31300ac0dcc2276498ba281470b5d9115"
+    "url": "https://github.com/openai/codex/releases/download/rust-v0.157.0/codex-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "db3fe3adaa35c50edfb68a988a117782fe3492960fb63d7003eb6748ccc0657b"
   }
 }

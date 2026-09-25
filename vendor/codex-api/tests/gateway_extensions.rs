@@ -5,6 +5,7 @@ use codex_api::{
     RetryConfig, session_update_session_json,
 };
 use codex_client::{HttpTransport, Request, RequestBody, Response, StreamResponse, TransportError};
+use codex_http_client::{HttpClientFactory, OutboundProxyPolicy};
 use codex_protocol::protocol::RealtimeVoice;
 use futures::{SinkExt, StreamExt};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
@@ -200,7 +201,10 @@ async fn raw_realtime_matches_native_handshake_without_initializing_a_session() 
     provider
         .headers
         .insert("x-header-priority", HeaderValue::from_static("provider"));
-    let client = RealtimeWebsocketClient::new(provider);
+    let client = RealtimeWebsocketClient::new(
+        provider,
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+    );
     let mut extra = HeaderMap::new();
     extra.insert("authorization", HeaderValue::from_static("Bearer upstream"));
     extra.insert(
@@ -261,7 +265,10 @@ async fn raw_realtime_preserves_handshake_error_status_headers_and_body() {
         )
         .mount(&server)
         .await;
-    let client = RealtimeWebsocketClient::new(provider(server.uri()));
+    let client = RealtimeWebsocketClient::new(
+        provider(server.uri()),
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+    );
     let error = client
         .connect_raw(
             &format!("{}/v1/realtime", server.uri()),
@@ -304,8 +311,7 @@ async fn raw_guardian_preserves_query_duplicates_and_lexical_encoding() {
         "api-version".into(),
         "pinned".into(),
     )]));
-    let client = codex_api::ResponsesWebsocketClient::new(provider, Arc::new(Auth))
-        .with_endpoint(codex_api::ResponsesEndpoint::Guardian);
+    let client = codex_api::ResponsesWebsocketClient::new(provider, Arc::new(Auth));
     let factory = codex_http_client::HttpClientFactory::new(
         codex_http_client::OutboundProxyPolicy::ReqwestDefault,
     );
@@ -314,6 +320,7 @@ async fn raw_guardian_preserves_query_duplicates_and_lexical_encoding() {
             &factory,
             HeaderMap::new(),
             HeaderMap::new(),
+            "/guardian",
             Some("duplicate=one&duplicate=two&encoded=%2f%252F&space=a+b&empty="),
         )
         .await

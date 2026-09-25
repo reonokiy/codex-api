@@ -36,8 +36,9 @@ CASES = [
          'pub(crate) fn authorize(_gateway: &Gateway, _headers: &HeaderMap) -> Result<(), GatewayError> { Ok(()) }',
          'native_cases::native_errors_redirects_and_auth_modes_remain_transparent',
          'Gateway authentication is separate from upstream credentials across native protocols.'),
-    Case('sdk_headers', 'images.rs',
-         r'        headers.remove\("user-agent"\);\n        headers.remove\("originator"\);', '',
+    Case('sdk_headers', 'server.rs',
+         r'pub\(crate\) fn forward_request_headers\(.*?\n\}',
+         'pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap { headers.clone() }',
          'images_match_original_client_and_preserve_complete_responses',
          'SDK headers must not change original Codex upstream headers.'),
     Case('image_defaults', 'images.rs',
@@ -89,6 +90,11 @@ def main():
     parser.add_argument('--case', action='append', choices=[case.name for case in CASES])
     args = parser.parse_args()
     selected = [case for case in CASES if not args.case or case.name in args.case]
+    for case in selected:
+        source = (ROOT / 'src' / case.source).read_text()
+        count = len(re.findall(case.pattern, source, flags=re.DOTALL))
+        if count != 1:
+            raise RuntimeError(f'{case.name}: expected one mutation site, found {count}')
     logs = ROOT / 'artifacts/ablation'
     logs.mkdir(parents=True, exist_ok=True)
     cache = ROOT / '.cache'
@@ -103,7 +109,7 @@ def main():
             work = Path(temporary)
             for name in ('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'clippy.toml'):
                 shutil.copy2(ROOT / name, work / name)
-            for name in ('src', 'tests', '.cargo', 'baseline'):
+            for name in ('src', 'tests', '.cargo', 'baseline', 'xtask'):
                 shutil.copytree(ROOT / name, work / name)
             # Dependencies stay unchanged. Mutants can only edit copied gateway source.
             (work / 'vendor').symlink_to(ROOT / 'vendor', target_is_directory=True)

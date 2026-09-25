@@ -2,6 +2,6 @@
 git-fetch-with-cli = true
 
 [alias]
-sdk = "test --workspace --locked --test gateway actual_openai_ -- --ignored"
+setup = "run --locked -p xtask -- setup"
 test-all = "test --workspace --locked -- --include-ignored"
-e2e = "test --locked --test live -- --ignored"
+e2e = "test --locked --test live -- --ignored --test-threads=1"

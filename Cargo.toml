@@ -6,8 +6,8 @@ license = "Apache-2.0"
 rust-version = "1.95"
 
 [dependencies]
-codex-context-fragments = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-websocket-client = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-context-fragments = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-websocket-client = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
 tokio-tungstenite = "0.28"
 zstd = "0.13"
 anyhow = "1"
@@ -27,22 +27,22 @@ toml = "0.9.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "v5"] }
-codex-api = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-client = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-http-client = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-login = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-model-provider = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-model-provider-info = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-models-manager = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-protocol = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
-codex-config = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-api = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-client = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-http-client = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-login = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-model-provider = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-model-provider-info = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-models-manager = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-protocol = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
+codex-config = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
 
 
-codex-features = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-features = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
 
-codex-tools = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-tools = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
 
-codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "be2951ea34f0d295ed0becf97079f92fa5f6950e" }
+codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "00c972ed5d6ff6499317fd41b7f23605b8e6850d" }
 
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
@@ -50,7 +50,7 @@ tempfile = "3"
 
 # Cargo does not inherit dependency workspace patches; these match Codex.
 [patch.crates-io]
-crossterm = { git = "https://github.com/openai-oss-forks/crossterm", rev = "45fecb9508105988f42fe6ff0441783ed3717f92" }
+crossterm = { git = "https://github.com/openai-oss-forks/crossterm", rev = "efa177859fd9623d57b9fe7ae9bf491ae1ac6ec4" }
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "0e5b2d73aa18dd9f0a50ee9ff199d5aef7594186" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }
 
@@ -68,6 +68,6 @@ strip = true
 codex-api = { path = "vendor/codex-api" }
 
 [workspace]
-members = [".", "vendor/codex-api"]
+members = [".", "vendor/codex-api", "xtask"]
 default-members = ["."]
 resolver = "3"

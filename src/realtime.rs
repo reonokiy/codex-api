@@ -244,7 +244,7 @@ impl Backend {
                 .api_provider()
                 .await
                 .map_err(GatewayError::internal)?;
-            let (socket, response) = RealtimeWebsocketClient::new(provider)
+            let (socket, response) = RealtimeWebsocketClient::new(provider, self.factory.clone())
                 .connect_raw(
                     &url,
                     headers,
@@ -288,7 +288,7 @@ impl Backend {
             let mut headers = headers.clone();
             // Native sidebands reuse call-creation auth, including the ChatGPT account id.
             api_auth.add_auth_headers(&mut headers);
-            let client = RealtimeWebsocketClient::new(provider);
+            let client = RealtimeWebsocketClient::new(provider, self.factory.clone());
             match client
                 .connect_raw(
                     &url,

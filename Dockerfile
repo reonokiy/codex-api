@@ -7,6 +7,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock rust-toolchain.toml clippy.toml ./
 COPY .cargo .cargo
 COPY vendor vendor
+COPY xtask xtask
 COPY src src
 ENV CARGO_BUILD_JOBS=2
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

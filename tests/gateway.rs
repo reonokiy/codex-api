@@ -728,6 +728,7 @@ async fn original_codex_client_can_consume_gateway_native_endpoint() {
         &factory,
         &provider.url_for_path("/responses"),
         codex_http_client::ClientRouteClass::Api,
+        codex_login::default_client::ClientRedirectPolicy::Default,
     )
     .unwrap();
     let client = codex_api::ResponsesClient::new(
@@ -1048,6 +1049,7 @@ async fn captured_http_bodies_match_original_codex_including_zstd() {
         &factory,
         &provider.url_for_path("/responses"),
         codex_http_client::ClientRouteClass::Api,
+        codex_login::default_client::ClientRedirectPolicy::Default,
     )
     .unwrap();
     let direct = ResponsesClient::new(
@@ -1225,28 +1227,11 @@ async fn public_http_and_ws_assemble_items_missing_from_terminal_output() {
 #[tokio::test]
 #[ignore = "requires the pinned release binary; run scripts/fetch-codex-baseline.py"]
 async fn actual_codex_cli_can_use_gateway_http_and_websocket() {
-    let binary = std::env::var("CODEX_CLI_BIN").unwrap_or_else(|_| {
-        format!(
-            "{}/.cache/codex-baseline/rust-v{}/bin/codex-x86_64-unknown-linux-musl",
-            env!("CARGO_MANIFEST_DIR"),
-            codex_api_gateway::CODEX_RELEASE
-        )
-    });
-    let version = tokio::process::Command::new(&binary)
-        .arg("--version")
-        .output()
-        .await
-        .unwrap();
-    assert!(version.status.success());
-    assert_eq!(
-        String::from_utf8_lossy(&version.stdout).trim(),
-        format!("codex-cli {}", codex_api_gateway::CODEX_RELEASE),
-        "CLI must match the pinned implementation"
-    );
+    let binary = support::cli::binary().await;
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(20)).await;
     let directory = tempfile::tempdir().unwrap();
     for ws in [false, true] {
-        let home = tempfile::tempdir().unwrap();
+        let home = support::cli::home();
         let config = format!(
             r#"model = "gpt-5.5"
 model_provider = "gateway"
@@ -1305,7 +1290,7 @@ supports_websockets = {}
         "CLI did not exercise WebSocket"
     );
     let directory = h.capture.save("codex-cli-e2e");
-    std::fs::write(directory.join("assertions.json"),serde_json::to_vec_pretty(&json!({"codex_revision":codex_api_gateway::CODEX_REV,"cli_version":String::from_utf8_lossy(&version.stdout).trim(),"http":true,"websocket":true,"received_text":true})).unwrap()).unwrap();
+    std::fs::write(directory.join("assertions.json"),serde_json::to_vec_pretty(&json!({"codex_revision":codex_api_gateway::CODEX_REV,"cli_version":codex_api_gateway::CODEX_RELEASE,"http":true,"websocket":true,"received_text":true})).unwrap()).unwrap();
 }
 
 #[tokio::test]
@@ -1353,7 +1338,7 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
     let client = reqwest::Client::new();
     for path in ["codex", "backend-api/codex"] {
         let response = client
-            .get(format!("{}/{path}/models?client_version=0.155.1", h.url))
+            .get(format!("{}/{path}/models?client_version=0.157.0", h.url))
             .bearer_auth("client-key")
             .send()
             .await
@@ -1370,7 +1355,7 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
     }
     let directory = h.capture.save("model-catalog");
     let first = std::fs::read(directory.join("0-request.tcp")).unwrap();
-    assert!(first.starts_with(b"GET /models?client_version=0.155.1 HTTP/1.1\r\n"));
+    assert!(first.starts_with(b"GET /models?client_version=0.157.0 HTTP/1.1\r\n"));
 }
 
 #[path = "cases/tools.rs"]

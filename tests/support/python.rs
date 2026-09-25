@@ -18,3 +18,16 @@ pub fn command() -> tokio::process::Command {
     command.kill_on_drop(true);
     command
 }
+
+/// Run collected pytest cases while Rust owns the gateway and captured upstream.
+pub fn pytest(module: &str, report: &str) -> tokio::process::Command {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut command = command();
+    command
+        .current_dir(root)
+        .args(["-m", "pytest", "-q", "-ra", "--tb=short"])
+        .arg(root.join("tests/sdk").join(module))
+        .arg("--sdk-report")
+        .arg(root.join(report));
+    command
+}

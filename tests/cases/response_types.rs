@@ -12,31 +12,48 @@ async fn actual_openai_sdk_response_types() {
         .unwrap();
     let output = tokio::time::timeout(
         Duration::from_secs(40),
-        support::python::command()
-            .args([
-                "-c",
-                include_str!("../support/response_types_sdk.py"),
-                &h.url,
-                &h.model,
-                &lite.slug,
-            ])
+        support::python::pytest("test_parameters.py", "artifacts/sdk/parameters.json")
+            .env(
+                "CODEX_SDK_TEST_CONFIG",
+                json!({"text":h.url,"models":[h.model,lite.slug]}).to_string(),
+            )
             .output(),
     )
     .await
     .unwrap()
     .unwrap();
+    print!("{}", String::from_utf8_lossy(&output.stdout));
     assert!(
         output.status.success(),
-        "{}",
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let received = h.fake.received.lock().unwrap();
     assert_eq!(received.len(), 22, "invalid fields must not reach upstream");
-    for (group, is_lite) in received.chunks_exact(11).zip([false, true]) {
-        for (i, context) in ["auto", "current_turn", "all_turns"].iter().enumerate() {
-            for row in &group[i * 2..i * 2 + 2] {
-                assert_eq!(row.1["reasoning"]["context"], *context);
-                let expected_lite = is_lite && *context == "all_turns";
+    // Match explicit scenario identities, never pytest collection/execution order.
+    for (model, is_lite) in [(&h.model, false), (&lite.slug, true)] {
+        let scenario = |name: &str| {
+            let rows: Vec<_> = received
+                .iter()
+                .filter(|row| {
+                    row.1["model"] == *model
+                        && row.1["input"].as_array().unwrap().iter().any(|item| {
+                            item["role"] == "user"
+                                && item["content"].as_array().is_some_and(|content| {
+                                    content.iter().any(|part| part["text"] == name)
+                                })
+                        })
+                })
+                .collect();
+            assert_eq!(rows.len(), 1, "expected one request for {model}/{name}");
+            rows[0]
+        };
+        for context in ["auto", "current_turn", "all_turns"] {
+            for stream in ["False", "True"] {
+                let row = scenario(&format!("context-{context}-stream-{stream}"));
+                assert_eq!(row.1["reasoning"]["context"], context);
+                let expected_lite = is_lite && context == "all_turns";
                 assert_eq!(
                     row.1["input"][0]["type"] == "additional_tools",
                     expected_lite
@@ -47,7 +64,8 @@ async fn actual_openai_sdk_response_types() {
                 );
             }
         }
-        for row in &group[6..8] {
+        for stream in ["False", "True"] {
+            let row = scenario(&format!("context-None-stream-{stream}"));
             assert_eq!(
                 row.1["reasoning"]["context"],
                 if is_lite {
@@ -57,10 +75,16 @@ async fn actual_openai_sdk_response_types() {
                 }
             );
         }
-        assert_eq!(group[8].1["reasoning"]["summary"], "auto");
-        assert!(group[9].1["text"].get("format").is_none());
-        assert_eq!(group[10].1["text"]["format"]["type"], "json_schema");
-        assert_eq!(group[10].1["text"]["format"]["name"], "result");
+        assert_eq!(scenario("summary-alias").1["reasoning"]["summary"], "auto");
+        assert!(scenario("plain-text").1["text"].get("format").is_none());
+        assert_eq!(
+            scenario("json-schema").1["text"]["format"]["type"],
+            "json_schema"
+        );
+        assert_eq!(
+            scenario("json-schema").1["text"]["format"]["name"],
+            "result"
+        );
     }
 }
 
@@ -227,44 +251,42 @@ async fn actual_openai_sdk_compatibility_suite() {
     let config = json!({"text":text.url,"function":function.url,"custom":custom.url,"structured":structured.url,"compact":compact.url,"files":files.url,"limited":limited.url,"failed":failed.url,"incomplete":incomplete.url,"models":[text.model,lite.slug],"png":tool_cases::IMAGE_PNG});
     let output = tokio::time::timeout(
         Duration::from_secs(120),
-        support::python::command()
-            .args([
-                "-c",
-                include_str!("../support/sdk_compat.py"),
-                &config.to_string(),
-            ])
+        support::python::pytest("test_compatibility.py", "artifacts/sdk/compatibility.json")
+            .env("CODEX_SDK_TEST_CONFIG", config.to_string())
             .output(),
     )
     .await
     .expect("SDK suite timeout")
     .unwrap();
-    let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
-        panic!(
-            "SDK failed before report: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-    });
-    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("artifacts/sdk");
-    std::fs::create_dir_all(&directory).unwrap();
-    std::fs::write(
-        directory.join("compatibility.json"),
-        serde_json::to_vec_pretty(&report).unwrap(),
-    )
-    .unwrap();
-    let failures: Vec<_> = report["results"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|r| r["status"] != "passed")
-        .collect();
+    print!("{}", String::from_utf8_lossy(&output.stdout));
     assert!(
         output.status.success(),
-        "SDK failures: {}\n{}",
-        serde_json::to_string_pretty(&failures).unwrap(),
+        "SDK pytest failures:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let captured = text.fake.received.lock().unwrap();
     for model in [&text.model, &lite.slug] {
+        let hosted: Vec<_> = captured
+            .iter()
+            .filter(|(_, body)| {
+                body["model"] == *model
+                    && body["tools"]
+                        .as_array()
+                        .is_some_and(|tools| tools.iter().any(|tool| tool["type"] == "web_search"))
+            })
+            .collect();
+        assert_eq!(
+            hosted.len(),
+            2,
+            "both SDK hosted-search calls must use regular Responses"
+        );
+        assert!(hosted.iter().all(|(headers, _)| !headers.contains_key("x-openai-internal-codex-responses-lite")));
+        assert!(
+            hosted
+                .iter()
+                .any(|(_, body)| body["reasoning"]["context"] == "all_turns")
+        );
         assert!(
             captured
                 .iter()

@@ -78,24 +78,6 @@ impl<T: HttpTransport> HttpTransport for TapTransport<T> {
     }
 }
 
-/// Keep the raw catalog while the release's ModelsClient performs native decoding.
-/// 0.155.1 has no list_models_raw method, so capture at its transport boundary.
-pub struct ModelCatalogTransport {
-    pub inner: codex_api::ReqwestTransport,
-    pub body: std::sync::Arc<std::sync::OnceLock<Bytes>>,
-}
-impl HttpTransport for ModelCatalogTransport {
-    async fn execute(&self, request: Request) -> Result<Response, TransportError> {
-        let response =
-            collect_response(self.inner.stream(request).await?, 16 * 1024 * 1024).await?;
-        let _ = self.body.set(response.body.clone());
-        Ok(response)
-    }
-    async fn stream(&self, request: Request) -> Result<StreamResponse, TransportError> {
-        self.inner.stream(request).await
-    }
-}
-
 /// Keep the full response while the original standalone client validates its schema.
 pub struct StandaloneTransport {
     pub inner: codex_api::ReqwestTransport,

@@ -1,0 +1,2 @@
+# Unified patches intentionally contain a single-space context marker on blank lines.
+vendor/raw-transport.patch whitespace=-blank-at-eol

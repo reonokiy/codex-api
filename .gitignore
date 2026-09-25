@@ -8,4 +8,5 @@
 .env.*
 auth.json
 __pycache__/
+.pytest_cache/
 *.py[cod]

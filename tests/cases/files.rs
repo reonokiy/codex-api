@@ -68,7 +68,10 @@ async fn files_multipart_uses_original_three_stage_upload_without_auth_on_blob()
         &pool,
         "../source.txt".to_owned(),
         content.len() as u64,
-        futures::stream::once(async move { Ok(Bytes::from(direct_bytes)) }),
+        || {
+            let bytes = Bytes::from(direct_bytes.clone());
+            async move { Ok(futures::stream::once(async move { Ok(bytes) })) }
+        },
         None,
     )
     .await
