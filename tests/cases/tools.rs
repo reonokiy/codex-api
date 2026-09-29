@@ -71,7 +71,7 @@ async fn images_match_original_client_and_preserve_complete_responses() {
         n: None,
     };
     let edit = codex_api::ImageEditRequest {
-        images: vec![codex_api::ImageUrl {
+        images: vec![codex_protocol::models::ImageReference::Inline {
             image_url: format!("data:image/png;base64,{IMAGE_PNG}"),
         }],
         prompt: generation.prompt.clone(),

@@ -10,12 +10,16 @@ use axum::{
     response::Response,
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
-use codex_api::{
-    ImageBackground, ImageEditRequest, ImageGenerationRequest, ImageQuality, ImageUrl,
-};
+use codex_api::{ImageBackground, ImageEditRequest, ImageGenerationRequest, ImageQuality};
+use codex_protocol::models::ImageReference;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::sync::Arc;
+
+#[derive(Deserialize)]
+struct ImageUrl {
+    image_url: String,
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -88,7 +92,12 @@ impl Input {
                 }
             }
             Ok(ToolRequest::Edit(ImageEditRequest {
-                images,
+                images: images
+                    .into_iter()
+                    .map(|image| ImageReference::Inline {
+                        image_url: image.image_url,
+                    })
+                    .collect(),
                 prompt: self.prompt,
                 model,
                 background,

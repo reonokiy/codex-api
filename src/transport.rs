@@ -127,6 +127,7 @@ impl HttpTransport for ProxyTransport {
                 status: response.status,
                 url: None,
                 headers: Some(response.headers.clone()),
+                retry_after: codex_http_client::RetryAfter::from_headers(&response.headers),
                 body: std::str::from_utf8(&response.body).ok().map(str::to_owned),
             };
             *self

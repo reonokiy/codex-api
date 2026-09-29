@@ -213,7 +213,7 @@
          request.headers_mut().extend(headers);
  
          info!("connecting realtime websocket: {ws_url}");
-@@ -1052,52 +1153,27 @@
+@@ -1052,52 +1153,30 @@
          let (stream, response) = connector
              .connect(request, websocket_config())
              .await
@@ -224,6 +224,9 @@
 +                        status: response.status(),
 +                        url: Some(ws_url.to_string()),
 +                        headers: Some(response.headers().clone()),
++                        retry_after: codex_http_client::RetryAfter::from_headers(
++                            response.headers(),
++                        ),
 +                        body: response
 +                            .body()
 +                            .as_ref()
@@ -316,7 +319,7 @@
          body: EncodedJsonBody,
 --- a/src/endpoint/responses_websocket.rs
 +++ b/src/endpoint/responses_websocket.rs
-@@ -411,6 +411,50 @@
+@@ -418,6 +418,50 @@
          ))
      }
  
@@ -367,32 +370,40 @@
      /// Opens a WebSocket connection long enough to validate the upgrade response.
      ///
      /// The probe uses the same URL construction, headers, authentication, TLS,
-@@ -494,6 +538,35 @@
+@@ -501,28 +545,7 @@
      http_client_factory: &HttpClientFactory,
      turn_state: Option<Arc<OnceLock<String>>>,
  ) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
+-    info!("connecting to websocket: {url}");
+-
+-    let mut request = url
+-        .as_str()
+-        .into_client_request()
+-        .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
+-    request.headers_mut().extend(headers);
+-
+-    let connector = WebSocketConnector::new(http_client_factory)
+-        .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?;
+-    let response = connector.connect(request, websocket_config()).await;
+-
+-    let (stream, response) = match response {
+-        Ok((stream, response)) => {
+-            info!("successfully connected to websocket: {url}");
+-            (stream, response)
+-        }
+-        Err(err) => {
+-            error!("failed to connect to websocket: {err}, url: {url}");
+-            return Err(map_ws_error(err, &url));
+-        }
+-    };
 +    let (stream, response) = connect_websocket_raw(url, headers, http_client_factory).await?;
-+
-+    let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
-+    let server_model = response
-+        .headers()
-+        .get(OPENAI_MODEL_HEADER)
-+        .and_then(|value| value.to_str().ok())
-+        .map(ToString::to_string);
-+    if let Some(turn_state) = turn_state
-+        && let Some(header_value) = response
-+            .headers()
-+            .get(X_CODEX_TURN_STATE_HEADER)
-+            .and_then(|value| value.to_str().ok())
-+    {
-+        let _ = turn_state.set(header_value.to_string());
-+    }
-+    Ok((
-+        WsStream::new(stream),
-+        response.status(),
-+        reasoning_included,
-+        server_model,
-+    ))
+ 
+     let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
+     let server_model = response
+@@ -544,6 +567,37 @@
+         reasoning_included,
+         server_model,
+     ))
 +}
 +
 +async fn connect_websocket_raw(
@@ -400,40 +411,36 @@
 +    headers: HeaderMap,
 +    http_client_factory: &HttpClientFactory,
 +) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
-     info!("connecting to websocket: {url}");
- 
-     let mut request = url
-@@ -520,26 +593,7 @@
-         }
-     };
- 
--    let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
--    let server_model = response
--        .headers()
--        .get(OPENAI_MODEL_HEADER)
--        .and_then(|value| value.to_str().ok())
--        .map(ToString::to_string);
--    if let Some(turn_state) = turn_state
--        && let Some(header_value) = response
--            .headers()
--            .get(X_CODEX_TURN_STATE_HEADER)
--            .and_then(|value| value.to_str().ok())
--    {
--        let _ = turn_state.set(header_value.to_string());
--    }
--    Ok((
--        WsStream::new(stream),
--        response.status(),
--        reasoning_included,
--        server_model,
--    ))
++    info!("connecting to websocket: {url}");
++
++    let mut request = url
++        .as_str()
++        .into_client_request()
++        .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
++    request.headers_mut().extend(headers);
++
++    let connector = WebSocketConnector::new(http_client_factory)
++        .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?;
++    let response = connector.connect(request, websocket_config()).await;
++
++    let (stream, response) = match response {
++        Ok((stream, response)) => {
++            info!("successfully connected to websocket: {url}");
++            (stream, response)
++        }
++        Err(err) => {
++            error!("failed to connect to websocket: {err}, url: {url}");
++            return Err(map_ws_error(err, &url));
++        }
++    };
++
 +    Ok((stream, response))
  }
  
  fn websocket_config() -> WebSocketConfig {
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -53,11 +53,13 @@
+@@ -54,11 +54,13 @@
  pub use crate::endpoint::ImagesClient;
  pub use crate::endpoint::MemoriesClient;
  pub use crate::endpoint::ModelsClient;
@@ -447,7 +454,7 @@
  pub use crate::endpoint::RealtimeSessionConfig;
  pub use crate::endpoint::RealtimeSessionMode;
  pub use crate::endpoint::RealtimeTranscriptState;
-@@ -76,6 +78,7 @@
+@@ -77,6 +79,7 @@
  pub use crate::error::ApiError;
  pub use crate::files::HostedFileUploadContext;
  pub use crate::files::OPENAI_FILE_UPLOAD_LIMIT_BYTES;

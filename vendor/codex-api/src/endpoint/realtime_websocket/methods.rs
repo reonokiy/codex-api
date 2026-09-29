@@ -1159,6 +1159,9 @@ impl RealtimeWebsocketClient {
                         status: response.status(),
                         url: Some(ws_url.to_string()),
                         headers: Some(response.headers().clone()),
+                        retry_after: codex_http_client::RetryAfter::from_headers(
+                            response.headers(),
+                        ),
                         body: response
                             .body()
                             .as_ref()

@@ -281,12 +281,14 @@ async fn raw_realtime_preserves_handshake_error_status_headers_and_body() {
         status,
         headers,
         body,
+        retry_after,
         ..
     }) = error
     else {
         panic!("expected complete HTTP error");
     };
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(retry_after.is_some());
     assert_eq!(headers.unwrap()["retry-after"], "7");
     assert_eq!(body.unwrap(), "{\"error\":{\"code\":\"quota\"}}");
 }
