@@ -47,6 +47,8 @@ with OpenAI(base_url="http://127.0.0.1:8080", api_key=os.environ["CODEX_GATEWAY_
 This is a gateway/native extension; it is not a standard `/v1/search` API.
 It uses the gateway's ChatGPT login and request limits.
 
+Native paths forward body bytes, query, status, headers and errors unchanged. Upstream validates native fields, including unknown fields. The schema and gateway validation below describe the `/v1/alpha/search` adapter.
+
 ## JSON request
 
 ```json
@@ -89,7 +91,7 @@ Settings:
 | `user_location` | `{type:"approximate", country?:string, region?:string, city?:string, timezone?:string}` |
 | `image_settings` | `{max_results?:uint, caption?:boolean}` |
 
-The original `SearchCommands`/`SearchSettings` types serialize requests. Unknown request/command/settings fields are rejected. `allowed_callers` is upstream search metadata; it does not enable a hosted code interpreter. Command availability and query limits remain upstream-controlled.
+The public adapter uses the original `SearchCommands`/`SearchSettings` types to serialize requests and rejects unknown request/command/settings fields. `allowed_callers` is upstream search metadata; it does not enable a hosted code interpreter. Command availability and query limits remain upstream-controlled.
 
 ## Response
 

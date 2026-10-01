@@ -5,19 +5,19 @@
 
 ## Request
 
-Send the native request built by Codex. `model` must be a string and `stream` must be `true`:
+Send the native request built by Codex. For example:
 
 ```json
 {"model":"gpt-5.5","instructions":"You are a coding assistant.","input":[{"role":"user","content":[{"type":"input_text","text":"Hello"}]}],"tools":[],"tool_choice":"auto","store":false,"stream":true}
 ```
 
-Native JSON, tool namespaces, future fields and Responses Lite payloads are preserved. The gateway does not apply public catalog validation to `model`; the upstream validates native requests. `Content-Encoding` accepts `identity` or `zstd`.
+Native JSON, tool namespaces, future fields and Responses Lite payloads are preserved. The gateway does not apply public catalog validation to `model`; the upstream validates native requests. Body bytes, query parameters and content encoding are forwarded unchanged; upstream validates their format.
 
-Codex session/routing metadata is forwarded, including `session-id`, `thread-id`, `originator`, `user-agent`, `openai-beta` and relevant `x-codex-*`/Responses Lite headers from the gateway's allowlist. Authorization, account identity and routing authority are rebuilt using the gateway's subscription.
+Codex session/routing metadata is forwarded, including `session-id`, `thread-id`, `openai-beta` and `x-codex-*`/Responses Lite headers, subject to [header cleanup](headers.md). Authorization, account identity and routing authority are rebuilt using the gateway's subscription.
 
 ## Response
 
-Always SSE with native event payloads, including unknown event fields. Unlike `/v1/responses`, this endpoint does not assemble or rewrite terminal `response.output`. The original Codex parser validates the stream; interrupted streams never become synthetic success responses.
+Upstream status, headers and body bytes are relayed, including error bodies and SSE when returned. The gateway does not parse native SSE or assemble terminal `response.output`. `/v1/responses` retains its public adapter behavior.
 
 Codex 0.159.0 performs remote compaction through native Responses using a `compaction_trigger` input item. The separate [compact facade](responses-compact.md) is for applications that want a single JSON result.
 

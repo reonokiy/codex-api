@@ -27,13 +27,15 @@ Authorization: Bearer <upstream-credential>
 X-Codex-Gateway-Authorization: Bearer <gateway-key>
 ```
 
-The second header authenticates the gateway and is removed before forwarding. Original `Authorization`, account/project/organization headers and cookies remain available to the designated upstream. This header does not switch ordinary subscription routes to caller credentials; the [Realtime routes](realtime-calls.md) explicitly support both modes.
+The second header authenticates the gateway and is removed before forwarding. Original `Authorization`, account/project/organization headers and cookies remain available to the designated upstream. This header does not switch ordinary subscription routes to caller credentials; the public [Realtime facades](realtime-calls.md) explicitly support both modes.
+
+`/backend-api/plugins/featured` adds saved authentication only when it uses the Codex backend (`uses_codex_backend`); otherwise it forwards without subscription authentication.
 
 OAuth token/device exchange, agent task registration, JWKS, public distribution and telemetry use their original body/header authentication without a subscription Bearer token. Every gateway route still requires the gateway key when configured, except health and expiring [transfer URLs](transfers.md).
 
 ## Transport and client configuration
 
-Transparent routes retain the HTTP method, query, body bytes, status, business/protocol headers and WebSocket messages. [Header cleanup](headers.md) removes downstream client identity and connection-local headers before forwarding; gateway auth, host, content length and WebSocket handshake fields are rebuilt for each connection. Redirects are returned to the caller. Requests are limited to 16 MiB; the configured timeout covers response setup and subsequent stream inactivity. Specialized Responses, Images, Models, search and Realtime routes apply the behavior documented on their own pages.
+Transparent routes retain the HTTP method, query, body bytes, status, business/protocol headers and WebSocket messages. [Header cleanup](headers.md) removes downstream client identity and connection-local headers before forwarding; gateway auth, host, content length and WebSocket handshake fields are rebuilt for each connection. Redirects are returned to the caller. Requests are limited to 16 MiB; the configured timeout covers response setup and subsequent stream inactivity. Native Responses, Images, Models, search, memory and Realtime routes use raw forwarding with upstream validation. The `/v1` facades and `/codex/live` compatibility routes retain the adapters documented on their own pages.
 
 A Codex model provider's `base_url` redirects inference. Other ChatGPT backend clients use top-level `chatgpt_base_url = "http://127.0.0.1:8080/backend-api"`; they must also send valid gateway authentication. Some original client features require a local ChatGPT login regardless of the model provider setting. The actor marker below enables the image-tool gate only.
 
