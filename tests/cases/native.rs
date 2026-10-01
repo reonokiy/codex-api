@@ -312,8 +312,18 @@ async fn native_memory_preserves_opaque_requests_and_upstream_errors() {
 #[tokio::test]
 async fn featured_plugins_use_optional_saved_subscription() {
     let client = reqwest::Client::new();
+    let mut saved_headers = HeaderMap::new();
+    saved_headers.insert(
+        "authorization",
+        "Bearer saved-header-token".parse().unwrap(),
+    );
+    saved_headers.insert("chatgpt-account-id", "account_id".parse().unwrap());
     for (auth, expected) in [
         (CodexAuth::from_api_key("upstream-secret"), None),
+        (
+            CodexAuth::Headers(codex_login::AuthHeaders::new(saved_headers)),
+            Some("Bearer saved-header-token"),
+        ),
         (
             CodexAuth::create_dummy_chatgpt_auth_for_testing(),
             Some("Bearer Access Token"),

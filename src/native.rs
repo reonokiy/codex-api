@@ -202,6 +202,7 @@ pub async fn handle(
             .try_acquire_owned()
             .map_err(|_| busy())?;
         let endpoint = match (origin, path.split('?').next().unwrap_or_default()) {
+            (Origin::Codex, "responses") => Some("/responses"),
             (Origin::Codex, "guardian") => Some("/guardian"),
             (Origin::Codex, "guardian-classifier") => Some("/guardian-classifier"),
             _ => None,
@@ -391,7 +392,7 @@ impl Backend {
                 .provider
                 .auth()
                 .await
-                .filter(|auth| auth.is_chatgpt_auth())
+                .filter(|auth| auth.uses_codex_backend())
             {
                 Some(auth) => codex_model_provider::auth_provider_from_auth(&auth),
                 None => codex_model_provider::unauthenticated_auth_provider(),
@@ -423,14 +424,16 @@ impl Backend {
             .map(|a| (a.get_account_id(), a.get_chatgpt_user_id()));
         loop {
             let (mut provider, auth) = self.proxy_config(request.origin, request.auth).await?;
-            if request.auth == AuthPolicy::Subscription
-                && self
-                    .provider
-                    .auth()
-                    .await
-                    .as_ref()
-                    .map(|a| (a.get_account_id(), a.get_chatgpt_user_id()))
-                    != account
+            if matches!(
+                request.auth,
+                AuthPolicy::Subscription | AuthPolicy::OptionalSubscription
+            ) && self
+                .provider
+                .auth()
+                .await
+                .as_ref()
+                .map(|a| (a.get_account_id(), a.get_chatgpt_user_id()))
+                != account
             {
                 return Err(GatewayError::auth());
             }
@@ -480,8 +483,10 @@ impl Backend {
             {
                 Ok(response) => return Ok(response),
                 Err(ApiError::Transport(ref e))
-                    if request.auth == AuthPolicy::Subscription
-                        && self.provider.is_recoverable_auth_error(e)
+                    if matches!(
+                        request.auth,
+                        AuthPolicy::Subscription | AuthPolicy::OptionalSubscription
+                    ) && self.provider.is_recoverable_auth_error(e)
                         && recovery.has_next() =>
                 {
                     recovery.next().await.map_err(|_| GatewayError::auth())?;
