@@ -2,7 +2,7 @@ use crate::{CODEX_REV, backend::Backend, error::GatewayError, request::CreateRes
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Query, State, rejection::JsonRejection},
+    extract::{DefaultBodyLimit, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -30,36 +30,13 @@ pub fn router(gateway: Gateway) -> Router {
         )
         .route("/v1/models", get(models))
         .route("/v1/files", post(crate::files::create))
-        .route("/codex/memories/trace_summarize", post(crate::memories::summarize))
-        .route("/backend-api/codex/memories/trace_summarize", post(crate::memories::summarize))
         .route("/v1/alpha/search", post(crate::search::search))
-        .route("/codex/alpha/search", post(crate::search::search))
-        .route("/backend-api/codex/alpha/search", post(crate::search::search))
         .route("/v1/images/generations", post(crate::images::generate))
         .route("/v1/images/edits", post(crate::images::edit))
-        .route("/codex/images/generations", post(crate::images::generate))
-        .route("/codex/images/edits", post(crate::images::edit))
-        .route("/backend-api/codex/images/generations", post(crate::images::generate))
-        .route("/backend-api/codex/images/edits", post(crate::images::edit))
         .route("/v1/responses", post(create).get(crate::websocket::upgrade))
-        .route(
-            "/codex/responses",
-            post(native_create).get(crate::websocket::upgrade),
-        )
-        .route("/codex/models", get(native_models))
-        .route(
-            "/backend-api/codex/responses",
-            post(native_create).get(crate::websocket::upgrade),
-        )
-        .route("/backend-api/codex/models", get(native_models))
         .route("/v1/responses/compact", post(compact))
-        .route("/codex/responses/compact", post(compact))
         .route("/v1/realtime/calls", post(crate::realtime::calls))
-        .route("/codex/realtime/calls", post(crate::realtime::calls))
-        .route("/backend-api/codex/realtime/calls", post(crate::realtime::calls))
         .route("/v1/realtime", get(crate::realtime::upgrade))
-        .route("/codex/realtime", get(crate::realtime::upgrade))
-        .route("/backend-api/codex/realtime", get(crate::realtime::upgrade))
         .route("/v1/live", post(crate::realtime::calls).get(crate::realtime::upgrade))
         .route("/codex/live", post(crate::realtime::calls).get(crate::realtime::upgrade))
         .route("/backend-api/codex/live", post(crate::realtime::calls).get(crate::realtime::upgrade))
@@ -177,97 +154,6 @@ async fn create(
     } else {
         respond(gateway, Some((request, session_id)), None, stream, true).await
     }
-}
-
-async fn native_models(
-    State(gateway): State<Arc<Gateway>>,
-    headers: HeaderMap,
-    Query(query): Query<std::collections::HashMap<String, String>>,
-) -> Result<Response, GatewayError> {
-    authorize(&gateway, &headers)?;
-    let version = query
-        .get("client_version")
-        .map(String::as_str)
-        .unwrap_or(crate::CODEX_RELEASE);
-    if version.len() > 128
-        || !version
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b".-_+".contains(&c))
-    {
-        return Err(GatewayError::invalid("invalid client_version"));
-    }
-    let (body, etag) = tokio::time::timeout(
-        gateway.timeout,
-        gateway
-            .backend
-            .models(version, forward_request_headers(&headers)),
-    )
-    .await
-    .map_err(|_| timeout_error())??;
-    let mut response = Response::new(Body::from(body));
-    response
-        .headers_mut()
-        .insert("content-type", "application/json".parse().unwrap());
-    if let Some(etag) = etag {
-        response
-            .headers_mut()
-            .insert("etag", etag.parse().map_err(GatewayError::internal)?);
-    }
-    Ok(response)
-}
-
-async fn native_create(
-    State(gateway): State<Arc<Gateway>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response, GatewayError> {
-    authorize(&gateway, &headers)?;
-    let body = match headers
-        .get("content-encoding")
-        .and_then(|v| v.to_str().ok())
-    {
-        None | Some("identity") => body.to_vec(),
-        Some("zstd") => tokio::task::spawn_blocking(move || {
-            use std::io::Read;
-            let decoder = zstd::stream::read::Decoder::new(body.as_ref())
-                .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
-            let mut decoded = Vec::new();
-            decoder
-                .take(16 * 1024 * 1024 + 1)
-                .read_to_end(&mut decoded)
-                .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
-            if decoded.len() > 16 * 1024 * 1024 {
-                return Err(GatewayError {
-                    upstream_response: None,
-                    status: StatusCode::PAYLOAD_TOO_LARGE,
-                    code: "invalid_request_error",
-                    message: "decoded body exceeds 16 MiB".into(),
-                });
-            }
-            Ok(decoded)
-        })
-        .await
-        .map_err(GatewayError::internal)??,
-        _ => {
-            return Err(GatewayError {
-                upstream_response: None,
-                status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                code: "invalid_request_error",
-                message: "supported content encodings: identity, zstd".into(),
-            });
-        }
-    };
-    let raw: Box<serde_json::value::RawValue> =
-        serde_json::from_slice(&body).map_err(|e| GatewayError::invalid(e.to_string()))?;
-    let body: Value =
-        serde_json::from_str(raw.get()).map_err(|e| GatewayError::invalid(e.to_string()))?;
-    if !body.is_object() || body["stream"] != true || !body["model"].is_string() {
-        return Err(GatewayError::invalid(
-            "native endpoint requires an object with model and stream: true",
-        ));
-    }
-    let forwarded = forward_request_headers(&headers);
-    respond(gateway, None, Some((raw, forwarded)), true, false).await
 }
 
 pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap {

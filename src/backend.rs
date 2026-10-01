@@ -278,12 +278,6 @@ impl Backend {
                         .await
                         .map(|_| ())
                 }
-                ToolRequest::Memory(request) => {
-                    codex_api::MemoriesClient::new(transport, provider, api_auth)
-                        .summarize(request.clone(), headers.clone())
-                        .await
-                        .map(|_| ())
-                }
             };
             match result {
                 Ok(_) => {

@@ -26,19 +26,6 @@ pub(super) async fn upstream_native(
         .unwrap()
 }
 
-pub(super) async fn upstream_memory(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    fake.received
-        .lock()
-        .unwrap()
-        .push((headers, serde_json::from_slice(&body).unwrap()));
-    Response::builder().header("content-type", "application/json")
-        .body(Body::from(r#"{"output":[{"trace_summary":"trace","memory_summary":"memory"}],"future":{"preserved":true}}"#)).unwrap()
-}
-
 #[tokio::test]
 async fn native_routes_preserve_all_inventoried_backend_contracts() {
     let inventory: Value =
@@ -206,6 +193,11 @@ async fn native_errors_redirects_and_auth_modes_remain_transparent() {
             Some("personal-token"),
         ),
         ("/platform/test", Some("explicit-platform-key")),
+        ("/v1/chat/completions", Some("explicit-platform-key")),
+        (
+            "/v1/memories/trace_summarize",
+            Some("explicit-platform-key"),
+        ),
         (
             "/backend-api/wham/remote/control/server/pair",
             Some("remote-token"),
@@ -244,16 +236,18 @@ async fn native_errors_redirects_and_auth_modes_remain_transparent() {
             StatusCode::UNAUTHORIZED
         );
     }
-    assert_eq!(
-        client
-            .post(format!("{}/platform/files", h.url))
-            .bearer_auth("client-key")
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::BAD_REQUEST
-    );
+    for path in ["/platform/files", "/v1/analytics/codex/turn-costs"] {
+        assert_eq!(
+            client
+                .post(format!("{}{path}", h.url))
+                .bearer_auth("client-key")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
     assert_eq!(h.fake.received.lock().unwrap().len(), before);
 }
 
@@ -284,22 +278,72 @@ async fn native_inference_retains_original_retry_policy_and_final_binary_error()
 }
 
 #[tokio::test]
-async fn native_memory_uses_original_parser_and_preserves_future_response_fields() {
-    let h = Harness::new(vec![], StatusCode::OK, false, Duration::from_secs(5)).await;
-    let body = json!({"model":h.model,"traces":[{"id":"trace1","metadata":{"source_path":"rollout.jsonl"},"items":[{"type":"message","content":[]}]}],"future":true});
+async fn native_memory_preserves_opaque_requests_and_upstream_errors() {
+    let h = Harness::new(
+        vec![],
+        StatusCode::BAD_REQUEST,
+        false,
+        Duration::from_secs(5),
+    )
+    .await;
+    let body = b"{ \"future\": [1.00, true], \"model\": null }";
     let response = reqwest::Client::new()
-        .post(format!("{}/codex/memories/trace_summarize", h.url))
+        .post(format!(
+            "{}/codex/memories/trace_summarize?trace=a%2Fb&x=1&x=2",
+            h.url
+        ))
         .bearer_auth("client-key")
-        .json(&body)
+        .header("x-future-field", "keep")
+        .body(body.as_slice())
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.headers()["x-future-field"], "retained");
+    assert_eq!(response.bytes().await.unwrap(), body.as_slice());
+    let received = h.fake.received.lock().unwrap();
     assert_eq!(
-        response.json::<Value>().await.unwrap(),
-        json!({"output":[{"trace_summary":"trace","memory_summary":"memory"}],"future":{"preserved":true}})
+        received[0].1["path"],
+        "/memories/trace_summarize?trace=a%2Fb&x=1&x=2"
     );
-    assert_eq!(h.fake.received.lock().unwrap()[0].1, body);
+    assert_eq!(received[0].0["x-future-field"], "keep");
+}
+
+#[tokio::test]
+async fn featured_plugins_use_optional_saved_subscription() {
+    let client = reqwest::Client::new();
+    for (auth, expected) in [
+        (CodexAuth::from_api_key("upstream-secret"), None),
+        (
+            CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+            Some("Bearer Access Token"),
+        ),
+    ] {
+        let h =
+            Harness::with_auth(vec![], StatusCode::OK, false, Duration::from_secs(5), auth).await;
+        let response = client
+            .get(format!("{}/backend-api/plugins/featured", h.url))
+            .bearer_auth("client-key")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let recorded = h.fake.received.lock().unwrap();
+        assert_eq!(
+            recorded[0]
+                .0
+                .get("authorization")
+                .and_then(|v| v.to_str().ok()),
+            expected
+        );
+        assert_eq!(
+            recorded[0]
+                .0
+                .get("chatgpt-account-id")
+                .and_then(|v| v.to_str().ok()),
+            expected.map(|_| "account_id")
+        );
+    }
 }
 
 #[tokio::test]
@@ -459,4 +503,40 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
         StatusCode::UNAUTHORIZED
     );
     assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn native_legacy_compact_and_file_image_references_preserve_caller_json() {
+    let body = r#"{ "images":[{"file_id":"file-original"}], "future":{"x":1.00} }"#;
+    let h = Harness::new(vec![], StatusCode::OK, false, Duration::from_secs(5)).await;
+    let response = reqwest::Client::new()
+        .post(format!(
+            "{}/backend-api/codex/images/edits?future=a%2Fb",
+            h.url
+        ))
+        .bearer_auth("client-key")
+        .header("content-type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(h.fake.http_bodies.lock().unwrap()[0], body.as_bytes());
+    let compact = b"{ \"input\": [], \"future\": 1.00 }";
+    let response = reqwest::Client::new()
+        .post(format!("{}/codex/responses/compact?legacy=true", h.url))
+        .bearer_auth("client-key")
+        .header("x-codex-turn-state", "original-turn")
+        .body(compact.as_slice())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.bytes().await.unwrap(), compact.as_slice());
+    let recorded = h.fake.received.lock().unwrap();
+    assert_eq!(recorded[1].1["path"], "/responses/compact?legacy=true");
+    assert_eq!(recorded[1].0["x-codex-turn-state"], "original-turn");
+    let capture = h.capture.save("native-file-image");
+    let wire = std::fs::read(capture.join("0-request.tcp")).unwrap();
+    assert!(wire.starts_with(b"POST /images/edits?future=a%2Fb HTTP/1.1\r\n"));
 }

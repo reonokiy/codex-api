@@ -203,6 +203,17 @@ impl Harness {
         login: CodexAuth,
         transfers: bool,
     ) -> Self {
+        Self::with_origins(events, status, hang, timeout, login, transfers, false).await
+    }
+    async fn with_origins(
+        events: Vec<Value>,
+        status: StatusCode,
+        hang: bool,
+        timeout: Duration,
+        login: CodexAuth,
+        transfers: bool,
+        distinct_platform: bool,
+    ) -> Self {
         let subscription = login.is_chatgpt_auth();
         let fake = Fake {
             received: Default::default(),
@@ -223,6 +234,7 @@ impl Harness {
             .route("/responses", post(upstream).get(upstream_ws))
             .route("/realtime/calls", post(realtime_cases::upstream_call))
             .route("/realtime", axum::routing::get(upstream_ws))
+            .route("/platform-origin/realtime", axum::routing::get(upstream_ws))
             .route(
                 "/live",
                 post(realtime_cases::upstream_call).get(upstream_ws),
@@ -247,7 +259,7 @@ impl Harness {
             )
             .route(
                 "/memories/trace_summarize",
-                post(native_cases::upstream_memory),
+                post(native_cases::upstream_native),
             )
             .route(
                 "/guardian",
@@ -263,8 +275,19 @@ impl Harness {
             )
             .route(
                 "/models",
-                axum::routing::get(|| async {
-                    axum::Json(codex_models_manager::bundled_models_response().unwrap())
+                axum::routing::get(|headers: HeaderMap| async move {
+                    if headers.contains_key("if-none-match") {
+                        Response::builder()
+                            .status(StatusCode::NOT_MODIFIED)
+                            .header("etag", "catalog-cache")
+                            .header("x-future-field", "keep")
+                            .body(Body::empty())
+                            .unwrap()
+                    } else {
+                        axum::response::IntoResponse::into_response(axum::Json(
+                            codex_models_manager::bundled_models_response().unwrap(),
+                        ))
+                    }
                 }),
             )
             .fallback(native_cases::upstream_native)
@@ -283,7 +306,11 @@ impl Harness {
             auth,
             factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
             chatgpt_base_url: upstream_url.clone(),
-            platform_base_url: upstream_url.clone(),
+            platform_base_url: if distinct_platform {
+                format!("{upstream_url}/platform-origin")
+            } else {
+                upstream_url.clone()
+            },
             auth_base_url: upstream_url.clone(),
             subscription_only: subscription,
             compression: subscription,
@@ -621,19 +648,20 @@ async fn subscription_uses_codex_account_auth_and_zstd_without_reading_real_cred
 #[tokio::test]
 async fn native_preserves_full_body_headers_and_compressed_input() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
-    let body = json!({"model":"future-codex-model", "stream":true, "store":false,
+    let body = json!({"model":"future-codex-model", "stream":false, "store":false,
         "instructions":"original instructions", "input":[{"type":"custom_tool_call", "call_id":"call_1", "name":"apply_patch", "input":"patch"}],
         "tools":[{"type":"custom", "name":"apply_patch", "format":{"type":"text"}}],
         "client_metadata":{"trace":"keep"}, "future_field":{"nested":[1,2,3]}});
+    let compressed = zstd::encode_all(serde_json::to_vec(&body).unwrap().as_slice(), 3).unwrap();
     let response = reqwest::Client::new()
-        .post(format!("{}/codex/responses", h.url))
+        .post(format!("{}/codex/responses?future=a%2Fb&x=1&x=2", h.url))
         .bearer_auth("client-key")
         .header("content-encoding", "zstd")
         .header("session-id", "original-session")
         .header("thread-id", "original-thread")
         .header("x-codex-turn-state", "previous-state")
         .header("chatgpt-account-id", "client-must-not-win")
-        .body(zstd::encode_all(serde_json::to_vec(&body).unwrap().as_slice(), 3).unwrap())
+        .body(compressed.clone())
         .send()
         .await
         .unwrap();
@@ -655,48 +683,10 @@ async fn native_preserves_full_body_headers_and_compressed_input() {
     assert_eq!(headers["x-codex-turn-state"], "previous-state");
     assert_eq!(headers["authorization"], "Bearer upstream-secret");
     assert!(!headers.contains_key("chatgpt-account-id"));
-}
-
-#[tokio::test]
-async fn native_rejects_unauthorized_and_nonstream_and_decompression_bombs() {
-    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
-    let client = reqwest::Client::new();
-    let url = format!("{}/codex/responses", h.url);
-    assert_eq!(
-        client
-            .post(&url)
-            .json(&json!({"stream":true}))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::UNAUTHORIZED
-    );
-    assert_eq!(
-        client
-            .post(&url)
-            .bearer_auth("client-key")
-            .json(&json!({"model":"x","stream":false}))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::BAD_REQUEST
-    );
-    let bomb = zstd::encode_all(vec![b' '; 16 * 1024 * 1024 + 1].as_slice(), 1).unwrap();
-    assert_eq!(
-        client
-            .post(&url)
-            .bearer_auth("client-key")
-            .header("content-encoding", "zstd")
-            .body(bomb)
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        StatusCode::PAYLOAD_TOO_LARGE
-    );
-    assert!(h.fake.received.lock().unwrap().is_empty());
+    assert_eq!(h.fake.http_bodies.lock().unwrap()[0], compressed);
+    let capture = h.capture.save("native-http-preservation");
+    let wire = std::fs::read(capture.join("0-request.tcp")).unwrap();
+    assert!(wire.starts_with(b"POST /responses?future=a%2Fb&x=1&x=2 HTTP/1.1\r\n"));
 }
 
 #[tokio::test]
@@ -914,7 +904,8 @@ async fn websocket_preserves_unknown_events_binary_errors_and_rejects_bad_auth()
     )
     .await;
     for path in ["codex", "v1"] {
-        let url = format!("{}/{path}/responses", h.url).replacen("http:", "ws:", 1);
+        let url =
+            format!("{}/{path}/responses?future=a%2Fb&x=1&x=2", h.url).replacen("http:", "ws:", 1);
         let mut request = url.into_client_request().unwrap();
         request
             .headers_mut()
@@ -957,10 +948,13 @@ async fn websocket_preserves_unknown_events_binary_errors_and_rejects_bad_auth()
         ws.close(None).await.unwrap();
         tokio::time::sleep(Duration::from_millis(30)).await;
     }
+    let capture = h.capture.save("native-responses-query");
+    let wire = std::fs::read(capture.join("0-request.tcp")).unwrap();
+    assert!(wire.starts_with(b"GET /responses?future=a%2Fb&x=1&x=2 HTTP/1.1\r\n"));
 }
 
 #[tokio::test]
-async fn lite_http_and_both_compact_endpoints_return_original_output() {
+async fn lite_http_and_public_compact_return_original_output() {
     let compaction =
         json!({"type":"compaction","id":"cmp_1","encrypted_content":"encrypted-compaction"});
     let h = Harness::new(
@@ -1000,9 +994,9 @@ async fn lite_http_and_both_compact_endpoints_return_original_output() {
         assert_eq!(received[0].1["parallel_tool_calls"], false);
         assert_eq!(received[0].1["reasoning"]["context"], "all_turns");
     }
-    for path in ["v1", "codex"] {
+    {
         let response = client
-            .post(format!("{}/{path}/responses/compact", h.url))
+            .post(format!("{}/v1/responses/compact", h.url))
             .bearer_auth("client-key")
             .json(&json!({"model":h.model,"input":[{"role":"user","content":"compress"}]}))
             .send()
@@ -1077,6 +1071,7 @@ async fn captured_http_bodies_match_original_codex_including_zstd() {
     while let Some(event) = stream.next().await {
         event.unwrap();
     }
+    let original_wire_body = h.fake.http_bodies.lock().unwrap()[0].clone();
     let client = reqwest::Client::new();
     let response = client
         .post(format!("{}/codex/responses", h.url))
@@ -1085,7 +1080,10 @@ async fn captured_http_bodies_match_original_codex_including_zstd() {
         .header("session-id", "fixed-thread")
         .header("x-client-request-id", "fixed-thread")
         .header("x-codex-routing-hint", format!("model={}", model.slug))
-        .json(&request)
+        .header("accept", "text/event-stream")
+        .header("content-type", "application/json")
+        .header("content-encoding", "zstd")
+        .body(original_wire_body)
         .send()
         .await
         .unwrap();
@@ -1333,7 +1331,7 @@ async fn public_ws_accepts_sdk_input_and_builds_lite_request() {
 }
 
 #[tokio::test]
-async fn native_model_catalog_is_fetched_through_original_models_client() {
+async fn native_model_catalog_preserves_queries_and_conditional_responses() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
     let client = reqwest::Client::new();
     for path in ["codex", "backend-api/codex"] {
@@ -1353,9 +1351,28 @@ async fn native_model_catalog_is_fetched_through_original_models_client() {
                 .slug
         );
     }
+    let conditional = client
+        .get(format!(
+            "{}/codex/models?client_version=0.159.0&future=a%2Fb&x=1&x=2",
+            h.url
+        ))
+        .bearer_auth("client-key")
+        .header("if-none-match", "catalog-cache")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(conditional.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(conditional.headers()["etag"], "catalog-cache");
+    assert_eq!(conditional.headers()["x-future-field"], "keep");
+    assert!(conditional.bytes().await.unwrap().is_empty());
     let directory = h.capture.save("model-catalog");
     let first = std::fs::read(directory.join("0-request.tcp")).unwrap();
     assert!(first.starts_with(b"GET /models?client_version=0.159.0 HTTP/1.1\r\n"));
+    let conditional = std::fs::read(directory.join("2-request.tcp")).unwrap();
+    assert!(
+        conditional
+            .starts_with(b"GET /models?client_version=0.159.0&future=a%2Fb&x=1&x=2 HTTP/1.1\r\n")
+    );
 }
 
 #[path = "cases/tools.rs"]

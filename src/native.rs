@@ -33,6 +33,7 @@ pub enum Origin {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum AuthPolicy {
     Subscription,
+    OptionalSubscription,
     Passthrough,
     None,
 }
@@ -118,6 +119,12 @@ fn route(path: &str, method: &Method) -> Result<(Origin, String, AuthPolicy), Ga
             "/v1/audio/transcriptions" | "/transcribe" if method == Method::POST => {
                 (ChatGpt, "transcribe".into())
             }
+            "/v1/chat/completions" | "/v1/memories/trace_summarize" if method == Method::POST => {
+                (Platform, path.trim_start_matches("/v1/").to_owned())
+            }
+            "/v1/analytics/codex/turn-costs" if method == Method::POST => {
+                (Costs, "v1/analytics/codex/turn-costs".into())
+            }
             "/telemetry/costs" => (Costs, "v1/analytics/codex/turn-costs".into()),
             "/telemetry/metrics" => (Metrics, "otlp/v1/metrics".into()),
             "/telemetry/sentry" => (Sentry, "api/4510195390611458/envelope/".into()),
@@ -134,6 +141,7 @@ fn route(path: &str, method: &Method) -> Result<(Origin, String, AuthPolicy), Ga
     let auth = match origin {
         Codex => Subscription,
         ChatGpt => match path.as_str() {
+            "plugins/featured" => OptionalSubscription,
             "wham/remote/control/server"
             | "wham/remote/control/server/pair"
             | "wham/remote/control/server/pair/status" => Passthrough,
@@ -378,7 +386,17 @@ impl Backend {
             provider.query_params = None;
             provider.retry.max_attempts = 0;
         }
-        let auth = if policy == AuthPolicy::Subscription {
+        let auth = if policy == AuthPolicy::OptionalSubscription {
+            match self
+                .provider
+                .auth()
+                .await
+                .filter(|auth| auth.is_chatgpt_auth())
+            {
+                Some(auth) => codex_model_provider::auth_provider_from_auth(&auth),
+                None => codex_model_provider::unauthenticated_auth_provider(),
+            }
+        } else if policy == AuthPolicy::Subscription {
             let auth = self.provider.auth().await.ok_or_else(GatewayError::auth)?;
             if self.subscription_only && !auth.is_chatgpt_auth() {
                 return Err(GatewayError::auth());
