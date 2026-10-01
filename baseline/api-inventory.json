@@ -5,6 +5,38 @@
   "inventory_method": "Read production Rust source for first-party request constructors, URL builders, and all HTTP/WebSocket clients. Method GET on streaming endpoints denotes HTTP WebSocket upgrade or MCP SSE GET as documented. Public counterparts are source-backed family mappings, not unsupported completeness claims.",
   "entries": [
     {
+      "id": "historical-audio-transcription",
+      "methods": [
+        "POST"
+      ],
+      "path": "/backend-api/transcribe",
+      "scope": "inference",
+      "auth": "subscription",
+      "request": "Multipart file part containing audio.wav with audio/wav media type; OAuth source sends no model or prompt fields.",
+      "response": "JSON object with text; upstream failures retain status and body.",
+      "query": [],
+      "headers": [
+        "User-Agent",
+        "ChatGPT-Account-Id"
+      ],
+      "public_counterpart": "/v1/audio/transcriptions",
+      "source": [
+        {
+          "path": "codex-rs/tui/src/voice.rs",
+          "line": 787,
+          "commit": "4e119a3b38e4a4decfccb003acecabc4614142b6",
+          "url": "https://github.com/openai/codex/blob/4e119a3b38e4a4decfccb003acecabc4614142b6/codex-rs/tui/src/voice.rs#L787"
+        }
+      ],
+      "library": "reqwest",
+      "notes": "Historical Codex OAuth transcription contract supplements the fixed-release inventory. Custom ChatGPT base URLs append /transcribe directly. Gateway aliases preserve raw multipart and upstream response; broader Platform model/output options depend on upstream support.",
+      "gateway_paths": [
+        "/backend-api/transcribe",
+        "/transcribe",
+        "/v1/audio/transcriptions"
+      ]
+    },
+    {
       "id": "responses",
       "methods": [
         "POST",
@@ -2753,7 +2785,7 @@
     "Responses compact/lite do not exist as original paths in this pinned release source; gateway compatibility adapters may offer them, but must not inventory them as original Codex endpoints.",
     "chatgpt_base_url must be configured as gateway/backend-api separately from model provider base_url. Some callers also gate on cached Codex-backend auth; model provider actor marker alone does not enable every service.",
     "Original remote-control URL normalization rejects arbitrary nonlocalhost gateway hosts; localhost forwarder or a minimal original-source configuration patch is required for remote-control at K8s domain.",
-    "Standalone audio/transcriptions HTTP route is absent in this release; transcription runs inside Realtime audio.input.transcription. A new /v1/audio/transcriptions endpoint would be an actual conversion/orchestration, not native path passthrough."
+    "The fixed-release transcription uses Realtime audio.input.transcription. Historical Codex voice.rs at 4e119a3b38e4a4decfccb003acecabc4614142b6 also calls POST /backend-api/transcribe with OAuth file-only multipart; /transcribe and /v1/audio/transcriptions expose that raw historical contract."
   ],
   "schema_version": 1
 }

@@ -1186,19 +1186,19 @@
   "additional_public_operations": [
     {
       "family": "Recorded audio transcription",
-      "classification": "new_workflow_not_native_proxy",
+      "classification": "partial_counterpart",
       "corresponding_public_api": [
         "POST /v1/audio/transcriptions"
       ],
-      "native_api": null,
-      "evidence": "The 96-entry source inventory and direct Rust search found only Realtime-based transcription, not an HTTP audio transcription call.",
-      "public_shape": "Multipart file + model, optional prompt/language/response_format/stream and model-specific fields; JSON text plus optional usage/logprobs, or text/SSE/other model-specific formats.",
+      "native_api": "POST /backend-api/transcribe",
+      "evidence": "Historical Codex voice.rs at 4e119a3b38e4a4decfccb003acecabc4614142b6 lines 787-811 sends OAuth file-only multipart to the configured ChatGPT base URL plus /transcribe, with bearer, account ID and Codex User-Agent. The fixed-release inventory primarily uses Realtime transcription.",
+      "public_shape": "Platform transcription supports file + model and additional model-specific options; the historical OAuth contract guarantees a file part and JSON text result only.",
       "required_adapter_actions": [
-        "The original direct WebSocket transcription workflow requires API key auth, so subscription-only gateway feasibility needs a supported alternative verified first. If this additional facade is desired, decode supported audio files, resample to the exact original Realtime PCM format, configure transcription, append and commit, await final transcript and preserve failures. Implement requested output semantics or reject explicitly. This is not solved by routing to an invented backend audio/transcriptions path."
+        "Forward original multipart bytes to the ChatGPT transcribe route using gateway-owned OAuth credentials. Preserve upstream status, headers and body. Support /transcribe for historical custom base URLs. Broader Platform model, format and streaming options are upstream-dependent and are not translated into Realtime workflows."
       ],
       "official_sources": [
-        "https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create",
-        "https://developers.openai.com/api/docs/guides/realtime-transcription"
+        "https://github.com/openai/codex/blob/4e119a3b38e4a4decfccb003acecabc4614142b6/codex-rs/tui/src/voice.rs#L787",
+        "https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create"
       ]
     },
     {

@@ -86,7 +86,7 @@ pub fn request_headers(headers: &HeaderMap, policy: AuthPolicy) -> HeaderMap {
     clean
 }
 
-fn route(path: &str) -> Result<(Origin, String, AuthPolicy), GatewayError> {
+fn route(path: &str, method: &Method) -> Result<(Origin, String, AuthPolicy), GatewayError> {
     use AuthPolicy::*;
     use Origin::*;
     let (origin, path) = if let Some(path) = path
@@ -115,6 +115,9 @@ fn route(path: &str) -> Result<(Origin, String, AuthPolicy), GatewayError> {
         (Static, path.to_owned())
     } else {
         match path {
+            "/v1/audio/transcriptions" | "/transcribe" if method == Method::POST => {
+                (ChatGpt, "transcribe".into())
+            }
             "/telemetry/costs" => (Costs, "v1/analytics/codex/turn-costs".into()),
             "/telemetry/metrics" => (Metrics, "otlp/v1/metrics".into()),
             "/telemetry/sentry" => (Sentry, "api/4510195390611458/envelope/".into()),
@@ -154,7 +157,7 @@ pub async fn handle(
     request: Request,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
-    let (origin, mut path, auth) = route(request.uri().path())?;
+    let (origin, mut path, auth) = route(request.uri().path(), request.method())?;
     if auth == AuthPolicy::Passthrough
         && gateway.key.is_some()
         && !headers.contains_key(GATEWAY_AUTH)

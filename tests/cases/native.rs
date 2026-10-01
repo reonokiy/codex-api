@@ -364,3 +364,99 @@ async fn native_guardian_and_remote_control_websockets_relay_opaque_frames() {
         ws.close(None).await.unwrap();
     }
 }
+
+#[tokio::test]
+async fn historical_transcription_preserves_oauth_multipart_and_upstream_failures() {
+    let client = reqwest::Client::new();
+    let payload = b"--voice-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\x00\xffWAVE\r\n--voice-boundary--\r\n";
+    for status in [
+        StatusCode::OK,
+        StatusCode::BAD_REQUEST,
+        StatusCode::SERVICE_UNAVAILABLE,
+    ] {
+        let h = Harness::with_auth(
+            vec![],
+            status,
+            false,
+            Duration::from_secs(5),
+            CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        )
+        .await;
+        for path in [
+            "/v1/audio/transcriptions",
+            "/transcribe",
+            "/backend-api/transcribe",
+        ] {
+            let response = client
+                .post(format!("{}{path}?future=a%2Fb&x=1&x=2", h.url))
+                .bearer_auth("client-key")
+                .header(
+                    "content-type",
+                    "multipart/form-data; boundary=voice-boundary",
+                )
+                .header("chatgpt-account-id", "caller-account")
+                .header("cookie", "caller-secret")
+                .header("user-agent", "caller-sdk")
+                .body(payload.as_slice())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            assert_eq!(
+                response.headers()["content-type"],
+                "application/octet-stream"
+            );
+            assert_eq!(response.headers()["x-future-field"], "retained");
+            assert_eq!(
+                response.headers()["location"],
+                "/keep-original-location?q=a%2Fb"
+            );
+            assert!(!response.headers().contains_key("x-hop-header"));
+            assert_eq!(response.bytes().await.unwrap(), payload.as_slice());
+        }
+        let received = h.fake.received.lock().unwrap();
+        assert_eq!(received.len(), 3);
+        for (headers, request) in received.iter() {
+            assert_eq!(request["method"], "POST");
+            assert_eq!(request["path"], "/transcribe?future=a%2Fb&x=1&x=2");
+            assert_eq!(
+                headers["content-type"],
+                "multipart/form-data; boundary=voice-boundary"
+            );
+            assert_eq!(headers["chatgpt-account-id"], "account_id");
+            assert_eq!(headers["authorization"], "Bearer Access Token");
+            assert_eq!(
+                headers["user-agent"],
+                codex_login::default_client::get_codex_user_agent()
+            );
+            assert!(!headers.contains_key("cookie"));
+        }
+        assert!(
+            h.fake
+                .http_bodies
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|body| body == payload)
+        );
+    }
+    let h = Harness::with_auth(
+        vec![],
+        StatusCode::OK,
+        false,
+        Duration::from_secs(5),
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+    )
+    .await;
+    assert_eq!(
+        client
+            .post(format!("{}/v1/audio/transcriptions", h.url))
+            .body(payload.as_slice())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(h.fake.received.lock().unwrap().is_empty());
+}
