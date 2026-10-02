@@ -63,6 +63,7 @@ requirements vary by endpoint; see the [API reference](docs/index.md).
 
 - [Connect another Codex](docs/native.md#connect-another-codex)
 - [Standalone search](docs/search.md)
+- [OAuth audio transcription](docs/platform.md#oauth-audio-transcription)
 - [Image generation](docs/images-generations.md) and [editing](docs/images-edits.md)
 - [Authentication and limits](docs/common.md)
 
