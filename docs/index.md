@@ -13,6 +13,7 @@ Each page describes one logical endpoint and its aliases. The inventory is a sna
 | `POST /v1/responses/compact` | [Compaction](responses-compact.md) |
 | `GET /v1/models` | [Models](models.md) |
 | `POST /v1/files` | [File upload](files.md) |
+| `POST /v1/audio/transcriptions` | [OAuth audio transcription](platform.md#oauth-audio-transcription) |
 | `POST /v1/images/generations` | [Image generation](images-generations.md) |
 | `POST /v1/images/edits` | [Image editing](images-edits.md) |
 | `POST /v1/realtime/calls` | [Realtime calls](realtime-calls.md) |
@@ -25,6 +26,7 @@ Each page describes one logical endpoint and its aliases. The inventory is a sna
 
 | Method and path | Reference |
 | --- | --- |
+| `POST /transcribe`, `POST /backend-api/transcribe` | [OAuth audio transcription](platform.md#oauth-audio-transcription) |
 | `POST / GET /backend-api/codex/responses` | [responses](codex-responses.md) |
 | `POST / GET /backend-api/codex/guardian` | [guardian](guardian.md) |
 | `POST / GET /backend-api/codex/guardian-classifier` | [guardian classifier](guardian-classifier.md) |
@@ -120,6 +122,6 @@ Each page describes one logical endpoint and its aliases. The inventory is a sna
 | `GET /distribution/static/codex-app-prod/Codex.dmg` | [desktop dmg arm64](desktop-dmg-arm64.md) |
 | `GET /distribution/static/codex-app-prod/Codex-latest-x64.dmg` | [desktop dmg x64](desktop-dmg-x64.md) |
 
-The [transfer endpoint](transfers.md) groups signed upload/download operations. Platform-only services such as standalone transcription, Skills uploads and Agents sessions retain their official contracts through `/platform/*`; they do not become subscription-backed adapters.
+The [transfer endpoint](transfers.md) groups signed upload/download operations. The full Platform transcription contract, Skills uploads and Agents sessions retain their official contracts through `/platform/*`. The OAuth transcription aliases expose the historical ChatGPT file-only contract described above.
 
 Local execution, stdio/UDS app-server RPC, third-party MCP/OAuth, alternative model providers and external distribution hosts are listed as separate interfaces in the inventory. They are outside these fixed first-party routes.
