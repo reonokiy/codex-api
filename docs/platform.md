@@ -13,9 +13,9 @@ This namespace also reaches public Skills, Agents, Conversations, Realtime contr
 
 ## OAuth audio transcription
 
-`POST /v1/audio/transcriptions`, `POST /transcribe` and the existing `POST /backend-api/transcribe` forward to the gateway's configured `chatgpt_base_url` plus `/transcribe`. The default base is `https://chatgpt.com/backend-api`, so the default upstream URL is `https://chatgpt.com/backend-api/transcribe`.
+`POST /v1/audio/transcriptions` · Aliases: `/transcribe`, `/backend-api/transcribe`
 
-These routes use the gateway's saved ChatGPT OAuth credentials upstream. Send the gateway key in `Authorization`; the caller's key is not forwarded as an OpenAI API key. See [authentication and limits](common.md).
+These routes use the gateway's saved ChatGPT OAuth credentials and forward to `chatgpt_base_url` plus `/transcribe`, defaulting to `https://chatgpt.com/backend-api/transcribe`. Send the gateway key in `Authorization`; see [authentication and limits](common.md).
 
 Send a multipart `file` part containing WAV audio:
 
@@ -25,6 +25,4 @@ curl http://127.0.0.1:8080/v1/audio/transcriptions \
   -F 'file=@audio.wav;type=audio/wav'
 ```
 
-The [historical Codex OAuth client](https://github.com/openai/codex/blob/4e119a3b38e4a4decfccb003acecabc4614142b6/codex-rs/tui/src/voice.rs#L787) sends only this file part and reads a JSON `text` field. This is the source-backed contract for these aliases. The gateway forwards the original multipart bytes, content type and query, and preserves upstream status, end-to-end headers and response body, including errors. The shared 16 MiB request limit, concurrency and timeout apply.
-
-The aliases do not implement the full OpenAI Audio contract: model selection, prompt handling, output formats and streaming options are not implemented by the gateway. Additional fields are passed through for the upstream to accept or reject. Historical source and local forwarding tests do not establish current account entitlement or live upstream availability. Use `/platform/audio/transcriptions` with your own OpenAI API key for the official Platform contract described above.
+The [Codex OAuth client](https://github.com/openai/codex/blob/4e119a3b38e4a4decfccb003acecabc4614142b6/codex-rs/tui/src/voice.rs#L787) reads the transcript from the JSON `text` field. Requests and upstream responses, including errors, are forwarded unchanged. The shared request limit is 16 MiB.
