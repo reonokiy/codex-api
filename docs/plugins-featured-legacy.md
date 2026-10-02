@@ -2,7 +2,7 @@
 
 `GET /backend-api/plugins/featured`
 
-**Request:** Query platform. Saved authentication is added only when `uses_codex_backend` is true; otherwise the route forwards without subscription authentication. Gateway authentication still applies.
+**Request:** Query platform.
 
 **Response:** string[] plugin IDs.
 

@@ -1,10 +1,7 @@
 # Compact response history
 
-`POST /v1/responses/compact`<br>
-Native: `/codex/responses/compact`, `/backend-api/codex/responses/compact`<br>
+`POST /v1/responses/compact` · Alias: `/codex/responses/compact`  
 [Common rules](common.md)
-
-Native paths forward original method, query and body using subscription credentials, preserving upstream status, headers, body bytes and errors. Upstream validates their schema. The public facade below assembles a JSON compaction result.
 
 ## Request
 

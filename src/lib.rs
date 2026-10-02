@@ -4,6 +4,7 @@ pub mod files;
 mod headers;
 pub mod images;
 mod lite_instructions;
+mod memories;
 pub mod native;
 pub mod output;
 pub mod realtime;

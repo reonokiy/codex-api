@@ -1,12 +1,9 @@
 # Realtime call creation
 
-`POST /v1/realtime/calls`<br>
-Native provider routes: `/codex/realtime/calls`, `/backend-api/codex/realtime/calls`<br>
+`POST /v1/realtime/calls` · Aliases: `/codex/realtime/calls`, `/backend-api/codex/realtime/calls`  
 [Native rules](native.md)
 
-Native provider routes forward body bytes, content type and query unchanged to the configured Codex provider using subscription authentication. Upstream validates the request; status, headers, body and errors are preserved.
-
-The `/v1/realtime/calls` facade accepts one of:
+**Request:** one of:
 
 - `multipart/form-data`: exactly one `sdp` string and one `session` field containing a JSON object. This matches the public WebRTC call format.
 - `application/json`: native `{sdp:string,session:object}`.

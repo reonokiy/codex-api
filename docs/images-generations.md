@@ -4,8 +4,6 @@
 Native: `/codex/images/generations`, `/backend-api/codex/images/generations`  
 [Common rules](common.md)
 
-Native paths forward body bytes, query parameters, status, headers and errors unchanged using the gateway subscription. Upstream validates native fields. The adapter constraints below apply to `/v1/images/generations`.
-
 ## JSON request
 
 ```json
@@ -15,7 +13,7 @@ Native paths forward body bytes, query parameters, status, headers and errors un
 | Field | Type / behavior |
 | --- | --- |
 | `prompt` | Required non-empty string |
-| `model` | Non-empty string; public default `gpt-image-2` |
+| `model` | Non-empty string; public default `gpt-image-2`, required on native paths |
 | `n` | Optional integer, 1–10; upstream model limits also apply |
 | `size` | Optional non-empty string, e.g. `auto`; upstream validates supported dimensions |
 | `quality` | `auto`, `low`, `medium`, `high` |
@@ -41,4 +39,4 @@ result = client.images.generate(model="gpt-image-2", prompt="A blue bird")
 Path("bird.png").write_bytes(base64.b64decode(result.data[0].b64_json))
 ```
 
-The public adapter uses the original `ImagesClient`. URL output, image streaming, output compression, non-PNG output and unlisted parameters are unsupported. It does not implement the Responses `image_generation` tool.
+This endpoint uses the original `ImagesClient`. URL output, image streaming, output compression, non-PNG output and unlisted parameters are unsupported. It does not implement the Responses `image_generation` tool.

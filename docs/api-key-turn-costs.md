@@ -1,6 +1,6 @@
 # Api key turn costs
 
-`POST /telemetry/costs` · Alias: `/v1/analytics/codex/turn-costs`
+`POST /telemetry/costs`
 
 **Request:** {turn_ids:[string]}
 

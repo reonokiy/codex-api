@@ -254,12 +254,11 @@
         }
       ],
       "library": "codex-api",
-      "notes": "Codex internal memory API; native paths preserve raw requests and responses. The provider-driven API-key spelling /v1/memories/trace_summarize forwards caller API credentials to Platform; no documented public OpenAI memory resource counterpart.",
+      "notes": "Codex internal memory API; no public OpenAI memory API counterpart.",
       "documentation": "docs/memory-trace-summarize.md",
       "gateway_paths": [
         "/backend-api/codex/memories/trace_summarize",
-        "/codex/memories/trace_summarize",
-        "/v1/memories/trace_summarize"
+        "/codex/memories/trace_summarize"
       ]
     },
     {
@@ -574,7 +573,7 @@
         }
       ],
       "library": "codex-api",
-      "notes": "intent=quicksilver&architecture=avas for V1/frameless backend. Native paths preserve caller JSON, query, status, headers and bytes. Public /v1 adapters retain the original RealtimeCallClient request-shape split.",
+      "notes": "intent=quicksilver&architecture=avas for V1/frameless backend. Location rewriting needed to keep clients on gateway. Original RealtimeCallClient implements request-shape split.",
       "documentation": "docs/realtime-calls.md",
       "gateway_paths": [
         "/backend-api/codex/realtime/calls",
@@ -613,7 +612,7 @@
         }
       ],
       "library": "codex-api",
-      "notes": "Native /codex/realtime and /backend-api/codex/realtime direct WebSockets retain the configured provider origin. /v1/realtime existing-call sideband uses the Platform origin and the ChatGPT bearer/account used for call creation; explicit API credentials remain supported. Backend acceptance of new direct subscription sessions is not verified.",
+      "notes": "Gateway alias /backend-api/codex/realtime may route to fixed api.openai.com/v1/realtime. Actual official direct WS uses provider.to_api_provider(ApiKey), requires API key at core/src/realtime_conversation.rs:1773. WebRTC existing-call sideband accepts same ChatGPT bearer+account ID used for creation per core/src/client.rs:412. Do not claim direct subscription new-session auth is supported.",
       "gateway_aliases": [
         "/codex/realtime",
         "/backend-api/codex/realtime"
@@ -2207,8 +2206,7 @@
       "notes": "Default host api.chatgpt.com from chatgpt.com config; app-server may route provider.url_for_path(\"analytics/codex/turn-costs\") instead. Subscription does not substitute for API-key billing auth.",
       "documentation": "docs/api-key-turn-costs.md",
       "gateway_paths": [
-        "/telemetry/costs",
-        "/v1/analytics/codex/turn-costs"
+        "/telemetry/costs"
       ]
     },
     {

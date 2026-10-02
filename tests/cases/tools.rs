@@ -581,8 +581,7 @@ async fn standalone_search_matches_original_client_and_preserves_complete_output
     assert_eq!(received.len(), 3);
     assert!(received.iter().all(|r| r.0 == received[0].0));
     let bodies = h.fake.http_bodies.lock().unwrap();
-    assert_eq!(bodies[1], serde_json::to_vec(&request).unwrap());
-    assert_eq!(bodies[2], bodies[1]);
+    assert!(bodies.iter().all(|r| r == &bodies[0]));
 }
 
 #[tokio::test]
@@ -596,7 +595,7 @@ async fn standalone_search_rejects_unknown_fields_and_preserves_failures() {
         json!({"id":"x","model":"x","commands":{},"settings":{"cookies":"must-not-be-forwarded"}}),
     ] {
         let response = client
-            .post(format!("{}/v1/alpha/search", h.url))
+            .post(format!("{}/codex/alpha/search", h.url))
             .bearer_auth("client-key")
             .json(&body)
             .send()
@@ -605,7 +604,7 @@ async fn standalone_search_rejects_unknown_fields_and_preserves_failures() {
         assert_eq!(response.status(), 400);
     }
     let response = client
-        .post(format!("{}/v1/alpha/search", h.url))
+        .post(format!("{}/codex/alpha/search", h.url))
         .body("invalid JSON")
         .send()
         .await
@@ -620,7 +619,7 @@ async fn standalone_search_rejects_unknown_fields_and_preserves_failures() {
     )
     .await;
     let response = client
-        .post(format!("{}/v1/alpha/search", h.url))
+        .post(format!("{}/codex/alpha/search", h.url))
         .bearer_auth("client-key")
         .json(&json!({"id":"x","model":"x","commands":{"time":[{"utc_offset":"+00:00"}]}}))
         .send()

@@ -17,6 +17,7 @@ pub enum ToolRequest {
     Generate(codex_api::ImageGenerationRequest),
     Edit(codex_api::ImageEditRequest),
     Search(Box<codex_api::SearchRequest>),
+    Memory(serde_json::Value),
 }
 impl ToolRequest {
     pub fn path(&self) -> &'static str {
@@ -24,6 +25,7 @@ impl ToolRequest {
             Self::Generate(_) => "images/generations",
             Self::Edit(_) => "images/edits",
             Self::Search(_) => "alpha/search",
+            Self::Memory(_) => "memories/trace_summarize",
         }
     }
 }

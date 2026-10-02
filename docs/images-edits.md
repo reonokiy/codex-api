@@ -6,7 +6,7 @@ Native: `/codex/images/edits`, `/backend-api/codex/images/edits`
 
 ## Request
 
-The public path accepts multipart uploads or JSON and applies the parameters and defaults in [image generation](images-generations.md). Native paths forward original content type, body bytes and query without parsing; upstream validates their format and returns its original status, headers, body and errors. The adapter constraints below apply to `/v1/images/edits`.
+The public path accepts multipart uploads or native JSON. Native paths accept JSON only. Shared parameters and defaults match [image generation](images-generations.md).
 
 | Image field | Format |
 | --- | --- |
