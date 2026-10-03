@@ -18,5 +18,5 @@ pub mod transfers;
 pub mod transport;
 pub mod websocket;
 
-pub const CODEX_RELEASE: &str = "0.159.0";
-pub const CODEX_REV: &str = "687a119f0fcaace47e1f1abcc77cec6c813fd6da";
+pub const CODEX_RELEASE: &str = "0.160.0";
+pub const CODEX_REV: &str = "a956835d020762cb2b570053af06f643a11c0ecc";
