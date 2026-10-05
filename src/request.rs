@@ -27,6 +27,8 @@ pub struct CreateResponse {
     pub text: Option<TextInput>,
     pub service_tier: Option<String>,
     pub prompt_cache_key: Option<String>,
+    /// Accepted for public OpenAI compatibility; not forwarded to Codex.
+    pub safety_identifier: Option<String>,
     pub include: Option<Vec<String>>,
 }
 
@@ -99,6 +101,15 @@ impl CreateResponse {
         session_id: &str,
     ) -> Result<ResponsesApiRequest, GatewayError> {
         let lite = self.uses_responses_lite(model);
+        if self
+            .safety_identifier
+            .as_ref()
+            .is_some_and(|identifier| identifier.chars().count() > 64)
+        {
+            return Err(GatewayError::invalid(
+                "safety_identifier must be at most 64 characters",
+            ));
+        }
         if self.store {
             return Err(GatewayError::invalid(
                 "store=true is not supported; send full input history",

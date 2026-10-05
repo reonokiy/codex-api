@@ -432,6 +432,66 @@ async fn function_arguments_stream_and_tool_results_are_not_executed_or_lost() {
 }
 
 #[tokio::test]
+async fn accepts_safety_identifier_without_forwarding_it() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for stream in [false, true] {
+        for identifier in [
+            Value::Null,
+            json!("user-compatibility"),
+            json!("a".repeat(64)),
+        ] {
+            let response = h
+                .request(json!({
+                    "input": "hi",
+                    "stream": stream,
+                    "safety_identifier": identifier,
+                    "prompt_cache_key": "independent-cache",
+                }))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            if stream {
+                let events = parse_sse(&response.text().await.unwrap());
+                assert_eq!(events.last().unwrap()["type"], "response.completed");
+            } else {
+                assert_eq!(
+                    response.json::<Value>().await.unwrap()["status"],
+                    "completed"
+                );
+            }
+        }
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 6);
+    for (_, request) in received.iter() {
+        assert!(request.get("safety_identifier").is_none());
+        assert_eq!(request["prompt_cache_key"], "independent-cache");
+    }
+}
+
+#[tokio::test]
+async fn rejects_invalid_safety_identifier_before_contacting_upstream() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for identifier in [
+        json!(42),
+        json!(true),
+        json!({}),
+        json!([]),
+        json!("a".repeat(65)),
+    ] {
+        let response = h
+            .request(json!({"input": "hi", "safety_identifier": identifier}))
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error());
+        assert!(response.json::<Value>().await.unwrap()["error"].is_object());
+    }
+    assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn rejects_unsupported_features_before_contacting_upstream() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
     for body in [

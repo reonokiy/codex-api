@@ -23,6 +23,7 @@
 | `text.format` | `{"type":"text"}` or `{ "type":"json_schema", "name":string, "schema":object, "strict"?:boolean }`; schema strict defaults to `true` |
 | `service_tier` | `"auto"` or a tier supported by the model |
 | `prompt_cache_key` | Optional string; defaults to the request session ID |
+| `safety_identifier` | Optional string (at most 64 characters) or `null`; accepted for client compatibility and discarded locally, never forwarded to Codex |
 | `include` | Array of `"reasoning.encrypted_content"`, `"web_search_call.action.sources"`, `"web_search_call.results"`; encrypted reasoning is always requested |
 
 Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected model in the startup catalog are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
