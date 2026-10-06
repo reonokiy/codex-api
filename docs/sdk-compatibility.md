@@ -67,12 +67,16 @@ checks rejected options never reach upstream.
 
 ## Parameter audit
 
-The public adapter explicitly maps parameters into Codex requests. It must not
-accept options that disappear during serialization.
+The public adapter explicitly maps generation parameters into Codex requests.
+It must not silently discard generation options. The optional OpenAI
+`safety_identifier` is a documented compatibility exception: the gateway accepts
+and validates this client metadata but does not forward it to Codex or use it as
+a prompt cache key, session identity, or authorization credential.
 
 | Parameter | Behavior |
 | --- | --- |
 | `reasoning.context` | Accepted and forwarded; explicit `auto`/`current_turn` uses regular Responses because Lite requires `all_turns` |
+| `safety_identifier` | Optional string up to 64 characters or `null`; accepted and discarded locally, not forwarded to Codex |
 | `tools=[{"type":"web_search"}]` | Uses regular Responses even for Lite models; Lite does not execute the hosted search tool |
 | `reasoning.generate_summary` | Accepted as the deprecated alias of `summary`; supplying both is rejected as ambiguous |
 | `text.format.type = "text"` | Accepted as default text output, without a JSON schema requirement |
