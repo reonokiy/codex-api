@@ -2,7 +2,7 @@
 
 `GET /v1/models` · [Common rules](common.md)
 
-No request body or required query parameters.
+No request body or required query parameters. When `client_version` is present (as sent by Codex CLI), this endpoint returns the [native Codex catalog](codex-models.md), including upstream capability metadata and ETag. Without it, the public OpenAI list format below is unchanged.
 
 ```json
 {"object":"list","data":[{"id":"gpt-5.5","object":"model","created":0,"owned_by":"openai"}]}

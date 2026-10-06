@@ -1396,7 +1396,7 @@ async fn public_ws_accepts_sdk_input_and_builds_lite_request() {
 async fn native_model_catalog_is_fetched_through_original_models_client() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
     let client = reqwest::Client::new();
-    for path in ["codex", "backend-api/codex"] {
+    for path in ["codex", "backend-api/codex", "v1"] {
         let response = client
             .get(format!("{}/{path}/models?client_version=0.159.0", h.url))
             .bearer_auth("client-key")
@@ -1427,3 +1427,111 @@ mod realtime_cases;
 
 #[path = "cases/response_types.rs"]
 mod response_type_cases;
+
+#[tokio::test]
+async fn public_http_preserves_prepared_codex_requests() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
+    let body = json!({"model":"future-model", "stream":true, "store":false,
+        "instructions":"unchanged", "input":[], "tools":null,
+        "client_metadata":{"trace":"keep"}, "future_field":{"keep":true}});
+    let raw = serde_json::to_vec(&body).unwrap();
+    for compressed in [false, true] {
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/responses", h.url))
+            .bearer_auth("client-key")
+            .header("content-type", "application/json")
+            .header(
+                "content-encoding",
+                if compressed { "zstd" } else { "identity" },
+            )
+            .body(if compressed {
+                zstd::encode_all(raw.as_slice(), 3).unwrap()
+            } else {
+                raw.clone()
+            })
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response
+                .text()
+                .await
+                .unwrap()
+                .contains("response.completed")
+        );
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 2);
+    for (_, forwarded) in received.iter() {
+        assert_eq!(forwarded, &body);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires an installed Codex CLI; set CODEX_COMPAT_CLI_BIN"]
+async fn installed_codex_cli_can_use_v1_http_and_websocket() {
+    let binary = std::env::var("CODEX_COMPAT_CLI_BIN").expect("set CODEX_COMPAT_CLI_BIN");
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(20)).await;
+    let directory = tempfile::tempdir().unwrap();
+    for ws in [false, true] {
+        let home = support::cli::home();
+        let config = format!(
+            r#"model = "gpt-5.5"
+model_provider = "gateway"
+model_reasoning_effort = "low"
+[model_providers.gateway]
+name = "Gateway"
+base_url = "{}/v1"
+wire_api = "responses"
+env_key = "CODEX_GATEWAY_API_KEY"
+requires_openai_auth = false
+supports_websockets = {}
+"#,
+            h.url, ws
+        );
+        std::fs::write(home.path().join("config.toml"), config).unwrap();
+        let output = tokio::time::timeout(
+            Duration::from_secs(60),
+            tokio::process::Command::new(&binary)
+                .env("CODEX_HOME", home.path())
+                .env("CODEX_GATEWAY_API_KEY", "client-key")
+                .env_remove("OPENAI_API_KEY")
+                .env_remove("OPENAI_BASE_URL")
+                .current_dir(directory.path())
+                .args([
+                    "exec",
+                    "--ephemeral",
+                    "--skip-git-repo-check",
+                    "--sandbox",
+                    "read-only",
+                    "--json",
+                    "Reply briefly. Do not use tools.",
+                ])
+                .stdin(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .expect("CLI timeout")
+        .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "CLI failed (ws={ws}): {stdout} {stderr}"
+        );
+        assert!(stdout.contains("你好"), "missing model reply: {stdout}");
+        assert!(
+            !stderr.contains("failed to decode models response"),
+            "{stderr}"
+        );
+    }
+    assert!(!h.fake.http_bodies.lock().unwrap().is_empty());
+    assert!(
+        h.fake
+            .ws_connections
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+    );
+}

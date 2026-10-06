@@ -2,6 +2,10 @@
 
 `POST /v1/responses` · [Common rules](common.md) · [WebSocket variant](websocket.md)
 
+## Codex CLI compatibility
+
+Codex CLI can use the same `/v1` base URL as OpenAI SDK clients. Streaming requests containing `client_metadata`, and requests encoded with `Content-Encoding: zstd`, use the [native Responses contract](codex-responses.md): original payloads (including tools, Lite items and future fields) and SSE events are preserved. Native requests require `model` and `stream: true`; upstream validates their fields. Other requests use the public schema below.
+
 ## Request
 
 ```json
