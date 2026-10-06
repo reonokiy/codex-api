@@ -62,7 +62,7 @@ jobs:
         id: cargo-cache
         with:
           path: ${{ runner.temp }}/cargo-buildkit-cache
-          key: ${{ runner.os }}-cargo-buildkit-${{ hashFiles('Dockerfile', '**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          key: ${{ runner.os }}-cargo-buildkit-v2-${{ hashFiles('Dockerfile', '**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
       # The gha layer cache does not persist RUN cache mounts between runners.
       - name: Restore container Cargo cache mounts
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
@@ -89,6 +89,8 @@ jobs:
           load: true
           tags: codex-api:test
           labels: ${{ steps.meta.outputs.labels }}
+          # Execute Cargo on cache misses so cached image layers cannot leave the mounts empty.
+          no-cache-filters: ${{ steps.cargo-cache.outputs.cache-hit != 'true' && 'build' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke test
