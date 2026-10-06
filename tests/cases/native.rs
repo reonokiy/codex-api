@@ -465,3 +465,79 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
     );
     assert!(h.fake.received.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn audio_prefix_preserves_oauth_requests_and_upstream_errors() {
+    let h = Harness::with_auth(
+        vec![],
+        StatusCode::BAD_REQUEST,
+        false,
+        Duration::from_secs(5),
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+    )
+    .await;
+    let client = reqwest::Client::new();
+    let payload = b"RIFF\x00\xffWAVE";
+    for (method, path, upstream_path) in [
+        (reqwest::Method::GET, "/v1/audio", "/audio"),
+        (
+            reqwest::Method::PUT,
+            "/v1/audio/future/chunk",
+            "/audio/future/chunk",
+        ),
+    ] {
+        let response = client
+            .request(
+                method.clone(),
+                format!("{}{path}?future=a%2Fb&x=1&x=2", h.url),
+            )
+            .bearer_auth("client-key")
+            .header("content-type", "application/octet-stream")
+            .header("chatgpt-account-id", "caller-account")
+            .header("cookie", "caller-secret")
+            .header("originator", "caller-sdk")
+            .body(payload.as_slice())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/octet-stream"
+        );
+        assert_eq!(response.headers()["x-future-field"], "retained");
+        assert_eq!(
+            response.headers()["location"],
+            "/keep-original-location?q=a%2Fb"
+        );
+        assert!(!response.headers().contains_key("x-hop-header"));
+        assert_eq!(response.bytes().await.unwrap(), payload.as_slice());
+        let received = h.fake.received.lock().unwrap();
+        let (headers, request) = received.last().unwrap();
+        assert_eq!(request["method"], method.as_str());
+        assert_eq!(
+            request["path"],
+            format!("{upstream_path}?future=a%2Fb&x=1&x=2")
+        );
+        assert_eq!(headers["authorization"], "Bearer Access Token");
+        assert_eq!(headers["chatgpt-account-id"], "account_id");
+        assert_eq!(headers["content-type"], "application/octet-stream");
+        assert_eq!(
+            headers.get("originator"),
+            codex_login::default_client::default_headers().get("originator")
+        );
+        assert!(!headers.contains_key("cookie"));
+    }
+    assert_eq!(
+        h.fake.http_bodies.lock().unwrap().as_slice(),
+        &[payload.to_vec(), payload.to_vec()]
+    );
+    let response = client
+        .get(format!("{}/v1/audiobook", h.url))
+        .bearer_auth("client-key")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(h.fake.received.lock().unwrap().len(), 2);
+}

@@ -118,6 +118,10 @@ fn route(path: &str, method: &Method) -> Result<(Origin, String, AuthPolicy), Ga
             "/v1/audio/transcriptions" | "/transcribe" if method == Method::POST => {
                 (ChatGpt, "transcribe".into())
             }
+            "/v1/audio" => (ChatGpt, "audio".into()),
+            path if path.starts_with("/v1/audio/") => {
+                (ChatGpt, path.strip_prefix("/v1/").unwrap().to_owned())
+            }
             "/telemetry/costs" => (Costs, "v1/analytics/codex/turn-costs".into()),
             "/telemetry/metrics" => (Metrics, "otlp/v1/metrics".into()),
             "/telemetry/sentry" => (Sentry, "api/4510195390611458/envelope/".into()),
@@ -434,8 +438,11 @@ impl Backend {
             }
             if request.origin == Origin::Codex
                 || (request.origin == Origin::ChatGpt
-                    && request.method == Method::POST
-                    && request.path.split('?').next() == Some("transcribe"))
+                    && request.path.split('?').next().is_some_and(|path| {
+                        (request.method == Method::POST && path == "transcribe")
+                            || path == "audio"
+                            || path.starts_with("audio/")
+                    }))
             {
                 builder = builder.default_headers(codex_login::default_client::default_headers());
             }

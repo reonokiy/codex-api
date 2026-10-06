@@ -11,7 +11,11 @@ This namespace also reaches public Skills, Agents, Conversations, Realtime contr
 
 [Official API reference](https://developers.openai.com/api/reference)
 
-## OAuth audio transcription
+## OAuth audio forwarding
+
+`/v1/audio` and `/v1/audio/*` forward to `chatgpt_base_url` plus `/audio` and `/audio/*`, defaulting to `https://chatgpt.com/backend-api/audio`. The gateway uses saved ChatGPT OAuth credentials and preserves the request method, query, content type and body, and the upstream response status, headers and body. Available operations depend on the backend API.
+
+### Transcription
 
 `POST /v1/audio/transcriptions` · Aliases: `/transcribe`, `/backend-api/transcribe`
 
