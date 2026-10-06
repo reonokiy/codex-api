@@ -432,7 +432,11 @@ impl Backend {
             if matches!(request.origin, Origin::Codex | Origin::ChatGpt) {
                 builder = builder.with_chatgpt_cookies(&self.factory);
             }
-            if request.origin == Origin::Codex {
+            if request.origin == Origin::Codex
+                || (request.origin == Origin::ChatGpt
+                    && request.method == Method::POST
+                    && request.path.split('?').next() == Some("transcribe"))
+            {
                 builder = builder.default_headers(codex_login::default_client::default_headers());
             }
             let http = builder

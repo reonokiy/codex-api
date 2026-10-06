@@ -397,6 +397,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 .header("chatgpt-account-id", "caller-account")
                 .header("cookie", "caller-secret")
                 .header("user-agent", "caller-sdk")
+                .header("originator", "caller-sdk")
                 .body(payload.as_slice())
                 .send()
                 .await
@@ -425,6 +426,10 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
             );
             assert_eq!(headers["chatgpt-account-id"], "account_id");
             assert_eq!(headers["authorization"], "Bearer Access Token");
+            assert_eq!(
+                headers.get("originator"),
+                codex_login::default_client::default_headers().get("originator")
+            );
             assert_eq!(
                 headers["user-agent"],
                 codex_login::default_client::get_codex_user_agent()
