@@ -41,7 +41,7 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/codex/images/edits", post(crate::images::edit))
         .route("/backend-api/codex/images/generations", post(crate::images::generate))
         .route("/backend-api/codex/images/edits", post(crate::images::edit))
-        .route("/v1/responses", post(create).get(crate::websocket::upgrade))
+        .route("/v1/responses", post(compatible_create).get(crate::websocket::upgrade))
         .route(
             "/codex/responses",
             post(native_create).get(crate::websocket::upgrade),
@@ -116,12 +116,52 @@ pub(crate) fn authorize(gateway: &Gateway, headers: &HeaderMap) -> Result<(), Ga
 async fn models(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
-) -> Result<Json<Value>, GatewayError> {
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    // Codex requests its capability catalog with a client_version query.
+    if query.contains_key("client_version") {
+        return native_models(State(gateway), headers, Query(query)).await;
+    }
     Ok(Json(
         json!({"object":"list", "data":gateway.models.iter().map(|v| json!({"id":v.slug,"object":"model","created":0,"owned_by":"openai"})).collect::<Vec<_>>()}),
-    ))
+    ).into_response())
 }
+// Prepared Codex requests must bypass the public SDK adapter: adapting them
+// loses native tools, Responses Lite items, and current/future protocol fields.
+async fn compatible_create(
+    State(gateway): State<Arc<Gateway>>,
+    request: axum::extract::Request,
+) -> Result<Response, GatewayError> {
+    use axum::extract::FromRequest;
+    authorize(&gateway, request.headers())?;
+    let (parts, body) = request.into_parts();
+    let bytes = Bytes::from_request(axum::extract::Request::from_parts(parts.clone(), body), &())
+        .await
+        .map_err(|e| GatewayError {
+            upstream_response: None,
+            status: e.status(),
+            code: "invalid_request_error",
+            message: e.body_text(),
+        })?;
+    let compressed = parts
+        .headers
+        .get("content-encoding")
+        .is_some_and(|v| v == "zstd");
+    let native = serde_json::from_slice::<Value>(&bytes)
+        .is_ok_and(|body| body["stream"] == true && body.get("client_metadata").is_some());
+    if compressed || native {
+        return native_create(State(gateway), parts.headers, bytes).await;
+    }
+    let headers = parts.headers.clone();
+    let input = Json::<CreateResponse>::from_request(
+        axum::extract::Request::from_parts(parts, Body::from(bytes)),
+        &(),
+    )
+    .await;
+    create(State(gateway), headers, input).await
+}
+
 async fn create(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
