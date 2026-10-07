@@ -14,6 +14,11 @@ pub(super) async fn upstream_native(
     if fake.hang {
         std::future::pending::<()>().await;
     }
+    let body = if fake.status == StatusCode::FORBIDDEN {
+        Bytes::from_static(b"<!doctype html><html>upstream denied</html>")
+    } else {
+        body
+    };
     Response::builder()
         .status(fake.status)
         .header(
@@ -382,7 +387,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
         StatusCode::FORBIDDEN,
         StatusCode::SERVICE_UNAVAILABLE,
     ] {
-        let payload = if status == StatusCode::FORBIDDEN {
+        let expected_response = if status == StatusCode::FORBIDDEN {
             b"<!doctype html><html>upstream denied</html>".as_slice()
         } else {
             payload.as_slice()
@@ -411,7 +416,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 .header("cookie", "caller-secret")
                 .header("user-agent", "caller-sdk")
                 .header("originator", "caller-sdk")
-                .body(payload)
+                .body(payload.as_slice())
                 .send()
                 .await
                 .unwrap();
@@ -430,7 +435,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 "/keep-original-location?q=a%2Fb"
             );
             assert!(!response.headers().contains_key("x-hop-header"));
-            assert_eq!(response.bytes().await.unwrap(), payload);
+            assert_eq!(response.bytes().await.unwrap(), expected_response);
         }
         let received = h.fake.received.lock().unwrap();
         assert_eq!(received.len(), 3);
