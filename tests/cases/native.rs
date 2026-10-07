@@ -14,9 +14,21 @@ pub(super) async fn upstream_native(
     if fake.hang {
         std::future::pending::<()>().await;
     }
+    let body = if fake.status == StatusCode::FORBIDDEN {
+        Bytes::from_static(b"<!doctype html><html>upstream denied</html>")
+    } else {
+        body
+    };
     Response::builder()
         .status(fake.status)
-        .header("content-type", "application/octet-stream")
+        .header(
+            "content-type",
+            if body.starts_with(b"<!doctype html>") {
+                "text/html"
+            } else {
+                "application/octet-stream"
+            },
+        )
         .header("location", "/keep-original-location?q=a%2Fb")
         .header("mcp-session-id", "opaque-session")
         .header("x-future-field", "retained")
@@ -372,8 +384,14 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
     for status in [
         StatusCode::OK,
         StatusCode::BAD_REQUEST,
+        StatusCode::FORBIDDEN,
         StatusCode::SERVICE_UNAVAILABLE,
     ] {
+        let expected_response = if status == StatusCode::FORBIDDEN {
+            b"<!doctype html><html>upstream denied</html>".as_slice()
+        } else {
+            payload.as_slice()
+        };
         let h = Harness::with_auth(
             vec![],
             status,
@@ -397,6 +415,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 .header("chatgpt-account-id", "caller-account")
                 .header("cookie", "caller-secret")
                 .header("user-agent", "caller-sdk")
+                .header("originator", "caller-sdk")
                 .body(payload.as_slice())
                 .send()
                 .await
@@ -404,7 +423,11 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
             assert_eq!(response.status(), status);
             assert_eq!(
                 response.headers()["content-type"],
-                "application/octet-stream"
+                if status == StatusCode::FORBIDDEN {
+                    "text/html"
+                } else {
+                    "application/octet-stream"
+                }
             );
             assert_eq!(response.headers()["x-future-field"], "retained");
             assert_eq!(
@@ -412,7 +435,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 "/keep-original-location?q=a%2Fb"
             );
             assert!(!response.headers().contains_key("x-hop-header"));
-            assert_eq!(response.bytes().await.unwrap(), payload.as_slice());
+            assert_eq!(response.bytes().await.unwrap(), expected_response);
         }
         let received = h.fake.received.lock().unwrap();
         assert_eq!(received.len(), 3);
@@ -425,6 +448,10 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
             );
             assert_eq!(headers["chatgpt-account-id"], "account_id");
             assert_eq!(headers["authorization"], "Bearer Access Token");
+            assert_eq!(
+                headers.get("originator"),
+                codex_login::default_client::default_headers().get("originator")
+            );
             assert_eq!(
                 headers["user-agent"],
                 codex_login::default_client::get_codex_user_agent()
@@ -459,4 +486,80 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
         StatusCode::UNAUTHORIZED
     );
     assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn audio_prefix_preserves_oauth_requests_and_upstream_errors() {
+    let h = Harness::with_auth(
+        vec![],
+        StatusCode::BAD_REQUEST,
+        false,
+        Duration::from_secs(5),
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+    )
+    .await;
+    let client = reqwest::Client::new();
+    let payload = b"RIFF\x00\xffWAVE";
+    for (method, path, upstream_path) in [
+        (reqwest::Method::GET, "/v1/audio", "/audio"),
+        (
+            reqwest::Method::PUT,
+            "/v1/audio/future/chunk",
+            "/audio/future/chunk",
+        ),
+    ] {
+        let response = client
+            .request(
+                method.clone(),
+                format!("{}{path}?future=a%2Fb&x=1&x=2", h.url),
+            )
+            .bearer_auth("client-key")
+            .header("content-type", "application/octet-stream")
+            .header("chatgpt-account-id", "caller-account")
+            .header("cookie", "caller-secret")
+            .header("originator", "caller-sdk")
+            .body(payload.as_slice())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/octet-stream"
+        );
+        assert_eq!(response.headers()["x-future-field"], "retained");
+        assert_eq!(
+            response.headers()["location"],
+            "/keep-original-location?q=a%2Fb"
+        );
+        assert!(!response.headers().contains_key("x-hop-header"));
+        assert_eq!(response.bytes().await.unwrap(), payload.as_slice());
+        let received = h.fake.received.lock().unwrap();
+        let (headers, request) = received.last().unwrap();
+        assert_eq!(request["method"], method.as_str());
+        assert_eq!(
+            request["path"],
+            format!("{upstream_path}?future=a%2Fb&x=1&x=2")
+        );
+        assert_eq!(headers["authorization"], "Bearer Access Token");
+        assert_eq!(headers["chatgpt-account-id"], "account_id");
+        assert_eq!(headers["content-type"], "application/octet-stream");
+        assert_eq!(
+            headers.get("originator"),
+            codex_login::default_client::default_headers().get("originator")
+        );
+        assert!(!headers.contains_key("cookie"));
+    }
+    assert_eq!(
+        h.fake.http_bodies.lock().unwrap().as_slice(),
+        &[payload.to_vec(), payload.to_vec()]
+    );
+    let response = client
+        .get(format!("{}/v1/audiobook", h.url))
+        .bearer_auth("client-key")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(h.fake.received.lock().unwrap().len(), 2);
 }
