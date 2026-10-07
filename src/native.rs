@@ -6,7 +6,7 @@ use crate::{
 };
 use axum::{
     body::{Body, Bytes},
-    extract::{FromRequest, Request, State, WebSocketUpgrade},
+    extract::{DefaultBodyLimit, FromRequest, Multipart, Request, State, WebSocketUpgrade},
     response::Response,
 };
 use codex_api::{ApiError, RawClient};
@@ -164,6 +164,139 @@ fn is_audio(origin: Origin, method: &Method, path: &str) -> bool {
         })
 }
 
+async fn log_transcription_input(headers: HeaderMap, body: Bytes) {
+    let base64 = headers
+        .get("x-codex-base64")
+        .is_some_and(|value| value.as_bytes() == b"1");
+    tracing::debug!(
+        base64,
+        body_bytes = body.len(),
+        body_class = if base64 {
+            "base64"
+        } else {
+            "multipart_candidate"
+        },
+        "audio input metadata"
+    );
+    if base64 {
+        return;
+    }
+    let mut request = Request::new(Body::from(body));
+    *request.headers_mut() = headers;
+    DefaultBodyLimit::max(16 * 1024 * 1024).apply(&mut request);
+    let mut multipart = match Multipart::from_request(request, &()).await {
+        Ok(multipart) => multipart,
+        Err(_) => {
+            tracing::debug!(
+                success = false,
+                error_kind = "multipart_headers",
+                "audio input multipart"
+            );
+            return;
+        }
+    };
+    let mut field_count = 0;
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(_) => {
+                tracing::debug!(
+                    success = false,
+                    field_count,
+                    error_kind = "multipart_field",
+                    "audio input multipart"
+                );
+                return;
+            }
+        };
+        let name = match field.name() {
+            Some(
+                name @ ("file" | "model" | "prompt" | "language" | "response_format"
+                | "temperature"),
+            ) => name,
+            _ => "other",
+        }
+        .to_owned();
+        let mime = field
+            .content_type()
+            .unwrap_or("unknown")
+            .chars()
+            .take(128)
+            .collect::<String>();
+        let extension = field
+            .file_name()
+            .and_then(|name| name.rsplit_once('.').map(|(_, extension)| extension))
+            .filter(|extension| {
+                !extension.is_empty()
+                    && extension.len() <= 10
+                    && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            })
+            .unwrap_or("unknown")
+            .to_ascii_lowercase();
+        let bytes = match field.bytes().await {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                tracing::debug!(
+                    success = false,
+                    field_count,
+                    error_kind = "multipart_field_body",
+                    "audio input multipart"
+                );
+                return;
+            }
+        };
+        field_count += 1;
+        tracing::debug!(
+            field = name,
+            field_bytes = bytes.len(),
+            "audio input multipart field"
+        );
+        if name == "model" {
+            let model = std::str::from_utf8(&bytes)
+                .ok()
+                .map(|value| value.chars().take(128).collect::<String>());
+            tracing::debug!(
+                model = model.as_deref().unwrap_or("invalid_utf8"),
+                "audio input model"
+            );
+        }
+        if name == "file" {
+            let container = if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WAVE") {
+                "WAV"
+            } else if bytes.starts_with(b"fLaC") {
+                "FLAC"
+            } else if bytes.starts_with(b"ID3")
+                || (bytes.len() >= 2
+                    && bytes[0] == 0xff
+                    && bytes[1] & 0xe0 == 0xe0
+                    && bytes[1] & 0x18 != 0x08
+                    && bytes[1] & 0x06 != 0)
+            {
+                "MP3"
+            } else if bytes.get(4..8) == Some(b"ftyp") {
+                "MP4"
+            } else if bytes.starts_with(&[0x1a, 0x45, 0xdf, 0xa3])
+                && bytes[..bytes.len().min(4096)]
+                    .windows(4)
+                    .any(|window| window == b"webm")
+            {
+                "WEBM"
+            } else {
+                "unknown"
+            };
+            tracing::debug!(
+                mime,
+                extension,
+                file_bytes = bytes.len(),
+                container,
+                "audio input file"
+            );
+        }
+    }
+    tracing::debug!(success = true, field_count, "audio input multipart");
+}
+
 pub async fn handle(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
@@ -274,9 +407,17 @@ pub async fn handle(
     // Authentication and limits are enforced before reading any request body.
     respond(gateway, headers, async move {
         let method = request.method().clone();
+        let debug_input = origin == Origin::ChatGpt
+            && method == Method::POST
+            && path.split('?').next() == Some("transcribe")
+            && tracing::enabled!(tracing::Level::DEBUG);
+        let input_headers = debug_input.then(|| request.headers().clone());
         let body = Bytes::from_request(request, &())
             .await
             .map_err(|e| crate::standalone::extraction_error(e.status(), e.body_text()))?;
+        if let Some(input_headers) = input_headers {
+            log_transcription_input(input_headers, body.clone()).await;
+        }
         Ok(ProxyRequest {
             origin,
             method,
