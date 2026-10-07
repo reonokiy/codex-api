@@ -80,6 +80,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long,enable=${{ github.event_name != 'pull_request' }}
+            type=raw,value=pr-7,enable=${{ github.event_name == 'workflow_dispatch' && github.ref_name == 'fix/audio-transcription' }}
             type=ref,event=tag
             type=ref,event=pr
       - name: Build
