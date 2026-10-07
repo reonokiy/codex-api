@@ -379,6 +379,8 @@ async fn native_guardian_and_remote_control_websockets_relay_opaque_frames() {
 
 #[tokio::test]
 async fn historical_transcription_preserves_oauth_multipart_and_upstream_failures() {
+    let _debug = tracing::subscriber::set_default(tracing_subscriber::registry());
+    assert!(tracing::enabled!(tracing::Level::DEBUG));
     let client = reqwest::Client::new();
     let payload = b"--voice-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\nRIFF\x00\xffWAVE\r\n--voice-boundary--\r\n";
     for status in [
@@ -486,6 +488,30 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
         StatusCode::UNAUTHORIZED
     );
     assert!(h.fake.received.lock().unwrap().is_empty());
+    for (base64, body) in [
+        ("1", b"UklGRgD/V0FWRQ==".as_slice()),
+        ("0", b"incomplete multipart body".as_slice()),
+    ] {
+        let response = client
+            .post(format!("{}/v1/audio/transcriptions", h.url))
+            .bearer_auth("client-key")
+            .header("x-codex-base64", base64)
+            .header(
+                "content-type",
+                "multipart/form-data; boundary=voice-boundary",
+            )
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.bytes().await.unwrap(), body);
+        assert_eq!(h.fake.http_bodies.lock().unwrap().last().unwrap(), body);
+        assert_eq!(
+            h.fake.received.lock().unwrap().last().unwrap().0["x-codex-base64"],
+            base64
+        );
+    }
 }
 
 #[tokio::test]
