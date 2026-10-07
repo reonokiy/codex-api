@@ -16,7 +16,14 @@ pub(super) async fn upstream_native(
     }
     Response::builder()
         .status(fake.status)
-        .header("content-type", "application/octet-stream")
+        .header(
+            "content-type",
+            if body.starts_with(b"<!doctype html>") {
+                "text/html"
+            } else {
+                "application/octet-stream"
+            },
+        )
         .header("location", "/keep-original-location?q=a%2Fb")
         .header("mcp-session-id", "opaque-session")
         .header("x-future-field", "retained")
@@ -372,8 +379,14 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
     for status in [
         StatusCode::OK,
         StatusCode::BAD_REQUEST,
+        StatusCode::FORBIDDEN,
         StatusCode::SERVICE_UNAVAILABLE,
     ] {
+        let payload = if status == StatusCode::FORBIDDEN {
+            b"<!doctype html><html>upstream denied</html>".as_slice()
+        } else {
+            payload.as_slice()
+        };
         let h = Harness::with_auth(
             vec![],
             status,
@@ -398,14 +411,18 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 .header("cookie", "caller-secret")
                 .header("user-agent", "caller-sdk")
                 .header("originator", "caller-sdk")
-                .body(payload.as_slice())
+                .body(payload)
                 .send()
                 .await
                 .unwrap();
             assert_eq!(response.status(), status);
             assert_eq!(
                 response.headers()["content-type"],
-                "application/octet-stream"
+                if status == StatusCode::FORBIDDEN {
+                    "text/html"
+                } else {
+                    "application/octet-stream"
+                }
             );
             assert_eq!(response.headers()["x-future-field"], "retained");
             assert_eq!(
@@ -413,7 +430,7 @@ async fn historical_transcription_preserves_oauth_multipart_and_upstream_failure
                 "/keep-original-location?q=a%2Fb"
             );
             assert!(!response.headers().contains_key("x-hop-header"));
-            assert_eq!(response.bytes().await.unwrap(), payload.as_slice());
+            assert_eq!(response.bytes().await.unwrap(), payload);
         }
         let received = h.fake.received.lock().unwrap();
         assert_eq!(received.len(), 3);

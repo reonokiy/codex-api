@@ -155,13 +155,28 @@ fn route(path: &str, method: &Method) -> Result<(Origin, String, AuthPolicy), Ga
     Ok((origin, path, auth))
 }
 
+fn is_audio(origin: Origin, method: &Method, path: &str) -> bool {
+    origin == Origin::ChatGpt
+        && path.split('?').next().is_some_and(|path| {
+            (*method == Method::POST && path == "transcribe")
+                || path == "audio"
+                || path.starts_with("audio/")
+        })
+}
+
 pub async fn handle(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
     request: Request,
 ) -> Result<Response, GatewayError> {
+    let routed = route(request.uri().path(), request.method());
+    if let Ok((origin, path, _)) = &routed
+        && is_audio(*origin, request.method(), path)
+    {
+        tracing::info!(method = %request.method(), path = request.uri().path(), origin = "chatgpt", "audio request received");
+    }
     authorize(&gateway, &headers)?;
-    let (origin, mut path, auth) = route(request.uri().path(), request.method())?;
+    let (origin, mut path, auth) = routed?;
     if auth == AuthPolicy::Passthrough
         && gateway.key.is_some()
         && !headers.contains_key(GATEWAY_AUTH)
@@ -402,6 +417,33 @@ impl Backend {
     }
 
     pub async fn proxy(&self, request: ProxyRequest) -> Result<StreamResponse, GatewayError> {
+        let audio = is_audio(request.origin, &request.method, &request.path);
+        let log_response = |status: StatusCode, headers: &HeaderMap| {
+            if audio {
+                let content_type = headers
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if !status.is_success()
+                    || content_type
+                        .split(';')
+                        .next()
+                        .is_some_and(|mime| mime.trim().eq_ignore_ascii_case("text/html"))
+                {
+                    tracing::warn!(
+                        status = status.as_u16(),
+                        content_type,
+                        "audio upstream response"
+                    );
+                } else {
+                    tracing::info!(
+                        status = status.as_u16(),
+                        content_type,
+                        "audio upstream response"
+                    );
+                }
+            }
+        };
         let mut recovery = self.auth.unauthorized_recovery();
         let original = self.provider.auth().await;
         let account = original
@@ -430,25 +472,36 @@ impl Backend {
                 }
             }
             let url = provider.url_for_path(&path);
+            if audio {
+                if let Ok(target) = url.parse::<http::Uri>() {
+                    tracing::info!(method = %request.method, origin = "chatgpt", upstream_host = target.host().unwrap_or(""), upstream_path = target.path(), "audio upstream request");
+                } else {
+                    tracing::warn!(
+                        error_kind = "invalid_target_uri",
+                        "audio upstream target unavailable"
+                    );
+                }
+            }
             let mut builder = HttpClientBuilder::new()
                 .without_redirects()
                 .without_request_logging();
             if matches!(request.origin, Origin::Codex | Origin::ChatGpt) {
                 builder = builder.with_chatgpt_cookies(&self.factory);
             }
-            if request.origin == Origin::Codex
-                || (request.origin == Origin::ChatGpt
-                    && request.path.split('?').next().is_some_and(|path| {
-                        (request.method == Method::POST && path == "transcribe")
-                            || path == "audio"
-                            || path.starts_with("audio/")
-                    }))
-            {
+            if request.origin == Origin::Codex || audio {
                 builder = builder.default_headers(codex_login::default_client::default_headers());
             }
             let http = builder
                 .build_respecting_outbound_proxy_policy(&self.factory, &url, ClientRouteClass::Api)
-                .map_err(GatewayError::internal)?;
+                .map_err(|error| {
+                    if audio {
+                        tracing::warn!(
+                            error_kind = "client_build",
+                            "audio upstream request failed"
+                        );
+                    }
+                    GatewayError::internal(error)
+                })?;
             let mut headers = request.headers.clone();
             if request.origin == Origin::ChatGpt && !headers.contains_key("user-agent") {
                 headers.insert(
@@ -471,12 +524,22 @@ impl Backend {
                 .stream(request.method.clone(), &path, headers, request.body.clone())
                 .await
             {
-                Ok(response) => return Ok(response),
+                Ok(response) => {
+                    log_response(response.status, &response.headers);
+                    return Ok(response);
+                }
                 Err(ApiError::Transport(ref e))
                     if request.auth == AuthPolicy::Subscription
                         && self.provider.is_recoverable_auth_error(e)
                         && recovery.has_next() =>
                 {
+                    if let Some(response) = failed.lock().map_err(GatewayError::internal)?.as_ref()
+                    {
+                        log_response(response.status, &response.headers);
+                    }
+                    if audio {
+                        tracing::warn!(error_kind = "auth_recovery", "audio upstream retry");
+                    }
                     recovery.next().await.map_err(|_| GatewayError::auth())?;
                 }
                 Err(e) => {
@@ -486,6 +549,7 @@ impl Backend {
                     ) && let Some(response) =
                         failed.lock().map_err(GatewayError::internal)?.take()
                     {
+                        log_response(response.status, &response.headers);
                         return Ok(StreamResponse {
                             status: response.status,
                             headers: response.headers,
@@ -493,6 +557,23 @@ impl Backend {
                                 async move { Ok(response.body) },
                             )),
                         });
+                    }
+                    if audio {
+                        let error_kind = match &e {
+                            ApiError::Transport(codex_client::TransportError::Http { .. }) => {
+                                "http"
+                            }
+                            ApiError::Transport(codex_client::TransportError::Timeout) => "timeout",
+                            ApiError::Transport(codex_client::TransportError::Connection(_)) => {
+                                "connection"
+                            }
+                            ApiError::Transport(codex_client::TransportError::Network(_)) => {
+                                "network"
+                            }
+                            ApiError::Transport(_) => "transport",
+                            _ => "api",
+                        };
+                        tracing::warn!(error_kind, "audio upstream request failed");
                     }
                     return Err(GatewayError::from_api(e));
                 }

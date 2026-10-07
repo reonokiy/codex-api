@@ -30,3 +30,7 @@ curl http://127.0.0.1:8080/v1/audio/transcriptions \
 ```
 
 The [Codex OAuth client](https://github.com/openai/codex/blob/4e119a3b38e4a4decfccb003acecabc4614142b6/codex-rs/tui/src/voice.rs#L787) reads the transcript from the JSON `text` field. Requests and upstream responses, including errors, are forwarded unchanged. The shared request limit is 16 MiB.
+
+If transcription returns HTML, inspect the audio log entries: `audio request received` records the incoming method and path, `audio upstream request` records the effective upstream host and path, and `audio upstream response` records status and Content-Type. HTML responses and unsuccessful statuses produce warnings; the original response remains unchanged. `audio upstream request failed` records a fixed failure kind for transport/API errors. These entries exclude queries, credentials and bodies.
+
+The default log filter is `codex_api_gateway=info`. If `RUST_LOG` overrides it, include `codex_api_gateway=info` to see incoming and outgoing audio entries. Reproduce the request and compare the effective target with the expected `/backend-api/transcribe`; a custom `chatgpt_base_url` is used as configured. An incoming entry without an upstream entry points to a failure before forwarding, such as gateway authorization. No incoming entry means the request did not reach an audio handler in this running gateway, or the log filter hides it.
