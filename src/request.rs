@@ -314,6 +314,12 @@ fn normalize_input(value: Value) -> Result<Vec<ResponseItem>, GatewayError> {
                 } else {
                     "input_text"
                 };
+                // Public Responses clients send system messages, but the Codex
+                // upstream only accepts developer instructions in message input.
+                // Keep their position/content instead of folding them into defaults.
+                if role == "system" {
+                    object.insert("role".into(), json!("developer"));
+                }
                 if let Some(Value::String(text)) = object.get("content") {
                     object.insert("content".into(), json!([{"type":content_type,"text":text}]));
                 }

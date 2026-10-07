@@ -395,6 +395,60 @@ async fn stream_preserves_full_events_and_uses_codex_request_and_headers() {
 }
 
 #[tokio::test]
+async fn system_messages_are_normalized_for_codex_upstream() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for stream in [false, true] {
+        let response = h
+            .request(json!({
+                "instructions": "Keep explicit instructions.",
+                "input": [
+                    {"role": "system", "content": "Return structured output."},
+                    {"role": "developer", "content": "Keep developer content."},
+                    {"role": "user", "content": "First question."},
+                    {"role": "assistant", "content": "First answer."},
+                    {"type": "message", "role": "system", "content": [
+                        {"type": "input_text", "text": "Keep this later instruction in order."}
+                    ]},
+                    {"role": "user", "content": "Next question."}
+                ],
+                "stream": stream
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        response.bytes().await.unwrap();
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 2);
+    for (_, body) in received.iter() {
+        assert_eq!(body["instructions"], "Keep explicit instructions.");
+        let input = body["input"].as_array().unwrap();
+        assert_eq!(input.len(), 6);
+        assert_eq!(
+            input
+                .iter()
+                .map(|item| item["role"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "developer",
+                "developer",
+                "user",
+                "assistant",
+                "developer",
+                "user"
+            ]
+        );
+        assert_eq!(input[0]["content"][0]["text"], "Return structured output.");
+        assert_eq!(input[3]["content"][0]["type"], "output_text");
+        assert_eq!(
+            input[4]["content"][0]["text"],
+            "Keep this later instruction in order."
+        );
+    }
+}
+
+#[tokio::test]
 async fn nonstream_returns_the_entire_upstream_response() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
     let response = h.request(json!({"input":"hi"})).send().await.unwrap();
