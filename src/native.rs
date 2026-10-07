@@ -488,8 +488,10 @@ impl Backend {
             if matches!(request.origin, Origin::Codex | Origin::ChatGpt) {
                 builder = builder.with_chatgpt_cookies(&self.factory);
             }
-            if request.origin == Origin::Codex || audio {
-                builder = builder.default_headers(codex_login::default_client::default_headers());
+            let default_headers = (request.origin == Origin::Codex || audio)
+                .then(codex_login::default_client::default_headers);
+            if let Some(headers) = &default_headers {
+                builder = builder.default_headers(headers.clone());
             }
             let http = builder
                 .build_respecting_outbound_proxy_policy(&self.factory, &url, ClientRouteClass::Api)
@@ -515,6 +517,8 @@ impl Backend {
             let client = RawClient::new(
                 crate::transport::ProxyTransport {
                     http,
+                    audio_headers: if audio { default_headers } else { None },
+                    configured_chatgpt_cookies_present: self.factory.has_chatgpt_cookies(),
                     failed: failed.clone(),
                 },
                 provider,
