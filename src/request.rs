@@ -77,6 +77,9 @@ pub enum TextFormatInput {
 #[serde(deny_unknown_fields)]
 pub struct JsonFormat {
     pub name: String,
+    /// Accepted for OpenAI compatibility; Codex text controls do not support it.
+    #[serde(rename = "description")]
+    pub _description: Option<String>,
     pub schema: Value,
     pub strict: Option<bool>,
 }
@@ -341,4 +344,69 @@ fn normalize_input(value: Value) -> Result<Vec<ResponseItem>, GatewayError> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn schema_request() -> Value {
+        json!({
+            "model": "test-model", "input": "Extract memories",
+            "text": {"format": {
+                "type": "json_schema", "name": "activities",
+                "schema": {"type": "object", "properties": {}, "additionalProperties": false},
+                "strict": false
+            }}
+        })
+    }
+
+    #[test]
+    fn json_schema_description_is_accepted_without_changing_codex_output() {
+        let model = codex_models_manager::model_info::model_info_from_slug("test-model");
+        let baseline: CreateResponse = serde_json::from_value(schema_request()).unwrap();
+        let baseline = baseline.into_codex(&model, "test-session").unwrap();
+        for description in [json!("Extract user activities"), Value::Null] {
+            let mut payload = schema_request();
+            payload["text"]["format"]["description"] = description;
+            let request: CreateResponse = serde_json::from_value(payload).unwrap();
+            let converted = request.into_codex(&model, "test-session").unwrap();
+            assert_eq!(converted.text, baseline.text);
+            let format = converted.text.unwrap().format.unwrap();
+            assert_eq!(format.name, "activities");
+            assert!(!format.strict);
+            assert_eq!(format.schema, schema_request()["text"]["format"]["schema"]);
+        }
+    }
+
+    #[test]
+    fn json_schema_still_rejects_unknown_fields_and_invalid_description() {
+        for (field, value) in [("unknown", json!(true)), ("description", json!(123))] {
+            let mut payload = schema_request();
+            payload["text"]["format"][field] = value;
+            assert!(serde_json::from_value::<CreateResponse>(payload).is_err());
+        }
+    }
+
+    #[test]
+    fn json_schema_defaults_to_strict_with_description() {
+        let mut payload = schema_request();
+        payload["text"]["format"]
+            .as_object_mut()
+            .unwrap()
+            .remove("strict");
+        payload["text"]["format"]["description"] = json!("Extract activities");
+        let request: CreateResponse = serde_json::from_value(payload).unwrap();
+        let model = codex_models_manager::model_info::model_info_from_slug("test-model");
+        assert!(
+            request
+                .into_codex(&model, "test-session")
+                .unwrap()
+                .text
+                .unwrap()
+                .format
+                .unwrap()
+                .strict
+        );
+    }
 }
