@@ -5,9 +5,9 @@
 
 | Query parameter | Type / behavior |
 | --- | --- |
-| `client_version` | Optional string; defaults to `0.160.0`. At most 128 ASCII letters, digits, `.`, `-`, `_`, `+`. |
+| `client_version` | Optional string; defaults to `0.162.0`. At most 128 ASCII letters, digits, `.`, `-`, `_`, `+`. |
 
-Example: `/backend-api/codex/models?client_version=0.160.0`.
+Example: `/backend-api/codex/models?client_version=0.162.0`.
 
 The original `ModelsClient` fetches the catalog using the gateway's subscription. The complete upstream JSON is preserved, including fields outside the pinned model schema:
 
