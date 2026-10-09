@@ -215,41 +215,31 @@ impl CreateResponse {
                 "service_tier is not supported by this Codex model",
             ));
         }
-        let mut instructions = self.instructions.unwrap_or_else(|| {
+        let instructions = self.instructions.unwrap_or_else(|| {
             model
                 .model_messages
                 .as_ref()
                 .and_then(|v| v.instructions_template.clone())
                 .unwrap_or_else(|| codex_models_manager::model_info::BASE_INSTRUCTIONS.to_owned())
         });
+        let namespace = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, session_id.as_bytes());
+        let mut prefix = Vec::new();
         let tools = if lite {
-            let tools = codex_tools::create_tools_json_for_responses_lite(&tool_specs)
-                .map_err(GatewayError::internal)?;
-            let namespace = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, session_id.as_bytes());
-            let mut prefix = vec![ResponseItem::AdditionalTools {
-                id: Some(codex_protocol::ResponseItemId::with_suffix(
-                    "at",
-                    uuid::Uuid::new_v5(
-                        &namespace,
-                        &serde_json::to_vec(&tools).map_err(GatewayError::internal)?,
-                    ),
-                )),
-                role: "developer".into(),
-                tools,
-            }];
-            if !instructions.is_empty() {
-                use codex_context_fragments::ContextualUserFragment;
-                let mut item = ContextualUserFragment::into(
-                    crate::lite_instructions::BaseInstructionsFragment(instructions.clone()),
-                );
-                item.set_id(Some(codex_protocol::ResponseItemId::with_suffix(
-                    "msg",
-                    uuid::Uuid::new_v5(&namespace, instructions.as_bytes()),
-                )));
-                prefix.push(item);
+            if !tool_specs.is_empty() {
+                let tools = codex_tools::create_tools_json_for_responses_lite(&tool_specs)
+                    .map_err(GatewayError::internal)?;
+                prefix.push(ResponseItem::AdditionalTools {
+                    id: Some(codex_protocol::ResponseItemId::with_suffix(
+                        "at",
+                        uuid::Uuid::new_v5(
+                            &namespace,
+                            &serde_json::to_vec(&tools).map_err(GatewayError::internal)?,
+                        ),
+                    )),
+                    role: "developer".into(),
+                    tools,
+                });
             }
-            input.splice(0..0, prefix);
-            instructions.clear();
             None
         } else {
             Some(
@@ -258,13 +248,24 @@ impl CreateResponse {
                     .into(),
             )
         };
+        if !instructions.is_empty() {
+            use codex_context_fragments::ContextualUserFragment;
+            let mut item = ContextualUserFragment::into(
+                crate::lite_instructions::BaseInstructionsFragment(instructions.clone()),
+            );
+            item.set_id(Some(codex_protocol::ResponseItemId::with_suffix(
+                "msg",
+                uuid::Uuid::new_v5(&namespace, instructions.as_bytes()),
+            )));
+            prefix.push(item);
+        }
+        input.splice(0..0, prefix);
         let mut include = self.include.unwrap_or_default();
         if !include.iter().any(|v| v == "reasoning.encrypted_content") {
             include.push("reasoning.encrypted_content".into());
         }
         Ok(ResponsesApiRequest {
             model: model.slug.clone(),
-            instructions,
             input,
             tools,
             tool_choice: "auto".into(),
