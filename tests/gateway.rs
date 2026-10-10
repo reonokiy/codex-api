@@ -388,10 +388,17 @@ async fn stream_preserves_full_events_and_uses_codex_request_and_headers() {
     assert_eq!(body["tool_choice"], "auto");
     assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
     assert_eq!(
-        body["input"],
+        json!(&body["input"].as_array().unwrap()[1..]),
         json!([{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}])
     );
-    assert!(!body["instructions"].as_str().unwrap().is_empty());
+    assert!(body.get("instructions").is_none());
+    assert_eq!(body["input"][0]["role"], "developer");
+    assert!(
+        !body["input"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -422,8 +429,12 @@ async fn system_messages_are_normalized_for_codex_upstream() {
     let received = h.fake.received.lock().unwrap();
     assert_eq!(received.len(), 2);
     for (_, body) in received.iter() {
-        assert_eq!(body["instructions"], "Keep explicit instructions.");
-        let input = body["input"].as_array().unwrap();
+        assert!(body.get("instructions").is_none());
+        assert_eq!(
+            body["input"][0]["content"][0]["text"],
+            "Keep explicit instructions."
+        );
+        let input = &body["input"].as_array().unwrap()[1..];
         assert_eq!(input.len(), 6);
         assert_eq!(
             input
@@ -481,8 +492,8 @@ async fn function_arguments_stream_and_tool_results_are_not_executed_or_lost() {
     assert_eq!(parse_sse(&response.text().await.unwrap()), expected);
     let received = h.fake.received.lock().unwrap();
     assert_eq!(received.len(), 1);
-    assert_eq!(received[0].1["input"][2]["call_id"], "call_1");
-    assert_eq!(received[0].1["input"][2]["output"], "sunny");
+    assert_eq!(received[0].1["input"][3]["call_id"], "call_1");
+    assert_eq!(received[0].1["input"][3]["output"], "sunny");
 }
 
 #[tokio::test]
@@ -782,7 +793,7 @@ async fn subscription_uses_codex_account_auth_and_zstd_without_reading_real_cred
     assert_eq!(received[0].0["chatgpt-account-id"], "account_id");
     assert_eq!(received[0].0["content-encoding"], "zstd");
     assert_eq!(
-        received[0].1["input"][0]["content"][0]["text"],
+        received[0].1["input"][1]["content"][0]["text"],
         "subscription request"
     );
 }
@@ -1419,6 +1430,7 @@ supports_websockets = {}
         let output = tokio::time::timeout(
             Duration::from_secs(60),
             tokio::process::Command::new(&binary)
+                .stdin(std::process::Stdio::null())
                 .env("CODEX_HOME", home.path())
                 .env("CODEX_GATEWAY_API_KEY", "client-key")
                 .env_remove("OPENAI_API_KEY")
@@ -1491,7 +1503,16 @@ async fn public_ws_accepts_sdk_input_and_builds_lite_request() {
     }
     let received = h.fake.received.lock().unwrap();
     let body = &received[0].1;
-    assert_eq!(body["input"][0]["type"], "additional_tools");
+    assert_eq!(body["input"][0]["type"], "message");
+    assert_eq!(body["input"][0]["role"], "developer");
+    assert_eq!(body["input"][0]["content"][0]["text"], "brief");
+    assert!(
+        body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["type"] != "additional_tools")
+    );
     assert_eq!(body["reasoning"]["context"], "all_turns");
     assert_eq!(body["generate"], false);
     assert_eq!(body["stream_id"], "lane-1");
@@ -1603,6 +1624,7 @@ supports_websockets = {}
         let output = tokio::time::timeout(
             Duration::from_secs(60),
             tokio::process::Command::new(&binary)
+                .stdin(std::process::Stdio::null())
                 .env("CODEX_HOME", home.path())
                 .env("CODEX_GATEWAY_API_KEY", "client-key")
                 .env_remove("OPENAI_API_KEY")

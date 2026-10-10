@@ -1,4 +1,4 @@
-// Copied from Codex 0.160.0 core/context/base_instructions.rs; Apache-2.0.
+// Copied from Codex 0.162.1 core/context/base_instructions.rs; Apache-2.0.
 use codex_context_fragments::ContextualUserFragment;
 use codex_protocol::models::ContentItemKind;
 
@@ -12,10 +12,6 @@ impl ContextualUserFragment for BaseInstructionsFragment {
 
     fn role(&self) -> &'static str {
         "developer"
-    }
-
-    fn requires_separate_message(&self) -> bool {
-        true
     }
 
     fn markers(&self) -> (&'static str, &'static str) {
