@@ -486,6 +486,61 @@ async fn function_arguments_stream_and_tool_results_are_not_executed_or_lost() {
 }
 
 #[tokio::test]
+async fn magpie_output_token_hint_preserves_responses_and_tool_calls() {
+    let call = json!({"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":"{}","status":"completed"});
+    let expected = vec![events()[0].clone(), completed(vec![call.clone()])];
+    let h = Harness::new(
+        expected.clone(),
+        StatusCode::OK,
+        false,
+        Duration::from_secs(10),
+    )
+    .await;
+    for stream in [false, true] {
+        for limit in [Value::Null, json!(1), json!(4096), json!(u64::MAX)] {
+            let response = h.request(json!({
+                "input": "Read the file", "stream": stream, "store": false,
+                "max_output_tokens": limit,
+                "tools": [{"type":"function","name":"read_file","parameters":{"type":"object","properties":{}}}]
+            })).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            if stream {
+                assert_eq!(parse_sse(&response.text().await.unwrap()), expected);
+            } else {
+                assert_eq!(response.json::<Value>().await.unwrap()["output"][0], call);
+            }
+        }
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 8);
+    for (_, request) in received.iter() {
+        assert!(request.get("max_output_tokens").is_none());
+        assert_eq!(request["tools"][0]["name"], "read_file");
+    }
+}
+
+#[tokio::test]
+async fn invalid_output_token_hints_do_not_contact_upstream() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for limit in [
+        json!(0),
+        json!(-1),
+        json!(1.5),
+        json!("32"),
+        json!(true),
+        json!({}),
+    ] {
+        let response = h
+            .request(json!({"input":"hi","max_output_tokens":limit}))
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error());
+    }
+    assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn accepts_safety_identifier_without_forwarding_it() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
     for stream in [false, true] {

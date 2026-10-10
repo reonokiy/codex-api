@@ -8,6 +8,11 @@ CASES = [
     for context in ('auto', 'current_turn', 'all_turns', None)
     for stream in (False, True)
 ] + [
+    pytest.param({'max_output_tokens': limit}, stream, True,
+                 id=f'max-output-tokens-{name}-stream-{stream}')
+    for name, limit in [('positive', 32), ('null', None)]
+    for stream in (False, True)
+] + [
     pytest.param({'safety_identifier': identifier}, stream, True,
                  id=f'safety-identifier-{name}-stream-{stream}')
     for name, identifier in [('string', 'user-compatibility'), ('null', None)]
@@ -26,7 +31,10 @@ CASES = [
         ('reasoning-mode', {'reasoning': {'mode': 'pro'}}),
         ('text-schema', {'text': {'format': {'type': 'text', 'schema': {}}}}),
         ('json-object', {'text': {'format': {'type': 'json_object'}}}),
-        ('max-output-tokens', {'max_output_tokens': 32}),
+        ('max-output-tokens-zero', {'max_output_tokens': 0}),
+        ('max-output-tokens-negative', {'max_output_tokens': -1}),
+        ('max-output-tokens-fraction', {'max_output_tokens': 1.5}),
+        ('max-output-tokens-type', {'max_output_tokens': '32'}),
         ('background', {'background': True}),
         ('store', {'store': True}),
         ('safety-identifier-type', {'safety_identifier': 42}),

@@ -29,6 +29,8 @@ pub struct CreateResponse {
     pub prompt_cache_key: Option<String>,
     /// Accepted for public OpenAI compatibility; not forwarded to Codex.
     pub safety_identifier: Option<String>,
+    /// Compatibility hint only: the Codex upstream has no output-token limit.
+    pub max_output_tokens: Option<u64>,
     pub include: Option<Vec<String>>,
 }
 
@@ -104,6 +106,11 @@ impl CreateResponse {
         session_id: &str,
     ) -> Result<ResponsesApiRequest, GatewayError> {
         let lite = self.uses_responses_lite(model);
+        if self.max_output_tokens == Some(0) {
+            return Err(GatewayError::invalid(
+                "max_output_tokens must be a positive integer",
+            ));
+        }
         if self
             .safety_identifier
             .as_ref()

@@ -28,6 +28,7 @@ Codex CLI can use the same `/v1` base URL as OpenAI SDK clients. Streaming reque
 | `service_tier` | `"auto"` or a tier supported by the model |
 | `prompt_cache_key` | Optional string; defaults to the request session ID |
 | `safety_identifier` | Optional string (at most 64 characters) or `null`; accepted for client compatibility and discarded locally, never forwarded to Codex |
+| `max_output_tokens` | Positive unsigned 64-bit integer or `null`; accepted as a compatibility hint for clients such as Magpie, but not forwarded or enforced because Codex has no output-token limit parameter |
 | `include` | Array of `"reasoning.encrypted_content"`, `"web_search_call.action.sources"`, `"web_search_call.results"`; encrypted reasoning is always requested |
 
 Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected model in the startup catalog are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
@@ -36,7 +37,7 @@ Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`,
 
 Message inputs accept `role` (`user`, `assistant`, `system`, `developer`) and string or Codex content arrays. Public `system` messages are forwarded as `developer` messages because Codex rejects the `system` input role. Their content and position are preserved, and explicit top-level `instructions` remain unchanged. Text and image content, reasoning, function/custom calls and their outputs, web-search calls and Codex compaction items are supported. Functions/custom tools run in the caller, which submits their outputs in the next request.
 
-HTTP continuation requires complete input history. `previous_response_id`, `background`, temperature/sampling controls, output-token limits and other unlisted top-level fields are not implemented here.
+HTTP continuation requires complete input history. `previous_response_id`, `background`, temperature/sampling controls and other unlisted top-level fields are not implemented here. `max_output_tokens` does not cap generated output; clients requiring a hard limit must not rely on it.
 
 ## Tools
 
