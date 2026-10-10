@@ -35,6 +35,8 @@ CASES = [
         ('max-output-tokens-negative', {'max_output_tokens': -1}),
         ('max-output-tokens-fraction', {'max_output_tokens': 1.5}),
         ('max-output-tokens-type', {'max_output_tokens': '32'}),
+        ('max-output-tokens-bool', {'max_output_tokens': True}),
+        ('max-output-tokens-overflow', {'max_output_tokens': 2**64}),
         ('background', {'background': True}),
         ('store', {'store': True}),
         ('safety-identifier-type', {'safety_identifier': 42}),

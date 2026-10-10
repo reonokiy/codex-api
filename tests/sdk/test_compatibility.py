@@ -36,6 +36,26 @@ def test_create(client, model, request_kwargs):
     completed(client.responses.create(**request_kwargs(model)))
 
 
+@pytest.mark.parametrize('limit', [
+    pytest.param(None, id='null'),
+    pytest.param(1, id='minimum'),
+    pytest.param(32, id='positive'),
+    pytest.param(2**64 - 1, id='u64-max'),
+])
+@pytest.mark.parametrize('stream', [False, True])
+def test_max_output_tokens_hint(client, model, request_kwargs, limit, stream):
+    # This compatibility hint must not truncate the fixture's completed response.
+    response = client.responses.create(**request_kwargs(
+        model, max_output_tokens=limit, stream=stream))
+    if stream:
+        with response:
+            events = list(response)
+        assert ''.join(e.delta for e in events if e.type == 'response.output_text.delta') == '你好'
+        completed(events[-1].response)
+    else:
+        completed(response)
+
+
 def input_cases(config):
     return {
         'message_string': [{'role': 'user', 'content': 'Hello'}],
@@ -174,7 +194,7 @@ def test_images_edit(client, config):
 
 @pytest.mark.parametrize('params', [
     pytest.param({'store': True}, id='store'),
-    pytest.param({'max_output_tokens': 32}, id='max-output-tokens'),
+    pytest.param({'max_output_tokens': 0}, id='max-output-tokens-zero'),
     pytest.param({'previous_response_id': 'resp_1'}, id='previous-response-id'),
     pytest.param({'background': True}, id='background'),
     pytest.param({'tool_choice': 'required'}, id='tool-choice'),
