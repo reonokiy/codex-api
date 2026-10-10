@@ -30,7 +30,7 @@ async fn actual_openai_sdk_response_types() {
         String::from_utf8_lossy(&output.stderr)
     );
     let received = h.fake.received.lock().unwrap();
-    assert_eq!(received.len(), 30, "invalid fields must not reach upstream");
+    assert_eq!(received.len(), 38, "invalid fields must not reach upstream");
     // Match explicit scenario identities, never pytest collection/execution order.
     for (model, is_lite) in [(&h.model, false), (&lite.slug, true)] {
         let scenario = |name: &str| {
@@ -65,6 +65,10 @@ async fn actual_openai_sdk_response_types() {
             }
         }
         for stream in ["False", "True"] {
+            for limit in ["positive", "null"] {
+                let row = scenario(&format!("max-output-tokens-{limit}-stream-{stream}"));
+                assert!(row.1.get("max_output_tokens").is_none());
+            }
             for identifier in ["string", "null"] {
                 let row = scenario(&format!("safety-identifier-{identifier}-stream-{stream}"));
                 assert!(row.1.get("safety_identifier").is_none());

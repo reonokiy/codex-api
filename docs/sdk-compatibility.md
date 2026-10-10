@@ -68,7 +68,10 @@ checks rejected options never reach upstream.
 ## Parameter audit
 
 The public adapter explicitly maps generation parameters into Codex requests.
-It must not silently discard generation options. The optional OpenAI
+Unsupported generation options are rejected except for the explicitly documented
+`max_output_tokens` compatibility hint: positive integers or null are accepted
+so Magpie can use this gateway, but the value is not forwarded or enforced.
+Codex has no corresponding generation limit. The optional OpenAI
 `safety_identifier` is a documented compatibility exception: the gateway accepts
 and validates this client metadata but does not forward it to Codex or use it as
 a prompt cache key, session identity, or authorization credential.
@@ -82,7 +85,8 @@ a prompt cache key, session identity, or authorization credential.
 | `text.format.type = "text"` | Accepted as default text output, without a JSON schema requirement |
 | `text.format.type = "json_schema"` | Accepted with name and object schema; Pydantic SDK helpers supported |
 | `reasoning.mode`, `text.format.type = "json_object"` | Not implemented by the pinned public adapter; rejected |
-| `max_output_tokens`, `background`, HTTP `previous_response_id` | Not implemented; rejected instead of ignored |
+| `max_output_tokens` | Positive unsigned 64-bit integer or `null`; accepted for Magpie compatibility, not forwarded or enforced; zero and invalid types are rejected |
+| `background`, HTTP `previous_response_id` | Not implemented; rejected instead of ignored |
 | `store=true`, forced tool choice | Unsupported by the adapter; rejected |
 | Unknown public request fields / invalid enum values | Rejected; native Responses continues preserving opaque request fields |
 
