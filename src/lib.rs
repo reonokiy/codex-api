@@ -13,6 +13,7 @@ mod search;
 pub mod server;
 pub mod settings;
 pub mod standalone;
+pub mod telemetry;
 mod tools;
 pub mod transfers;
 pub mod transport;

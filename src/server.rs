@@ -20,6 +20,7 @@ pub struct Gateway {
     pub concurrency: Arc<Semaphore>,
     pub timeout: Duration,
     pub transfers: Option<crate::transfers::Transfers>,
+    pub telemetry: Option<Arc<crate::telemetry::Telemetry>>,
 }
 
 pub fn router(gateway: Gateway) -> Router {
@@ -184,6 +185,7 @@ async fn create(
             )
         })?;
     let stream = input.stream;
+    let telemetry = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers);
     let headers = crate::headers::request_headers(&headers);
     let session_id = headers
         .get("thread-id")
@@ -193,6 +195,7 @@ async fn create(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let lite = input.uses_responses_lite(model);
     let request = input.into_codex(model, &session_id)?;
+    let usage = telemetry.start(&request.model, "responses", "http");
     if lite {
         let mut headers = forward_request_headers(&headers);
         headers.insert(
@@ -212,10 +215,19 @@ async fn create(
             )),
             stream,
             true,
+            usage,
         )
         .await
     } else {
-        respond(gateway, Some((request, session_id)), None, stream, true).await
+        respond(
+            gateway,
+            Some((request, session_id)),
+            None,
+            stream,
+            true,
+            usage,
+        )
+        .await
     }
 }
 
@@ -307,7 +319,12 @@ async fn native_create(
         ));
     }
     let forwarded = forward_request_headers(&headers);
-    respond(gateway, None, Some((raw, forwarded)), true, false).await
+    let usage = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers).start(
+        body["model"].as_str().unwrap_or("unknown"),
+        "responses",
+        "http",
+    );
+    respond(gateway, None, Some((raw, forwarded)), true, false, usage).await
 }
 
 pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap {
@@ -349,16 +366,20 @@ async fn respond(
     native: Option<(Box<serde_json::value::RawValue>, HeaderMap)>,
     stream: bool,
     aggregate_output: bool,
+    mut usage: crate::telemetry::UsageGuard,
 ) -> Result<Response, GatewayError> {
     let permit = gateway
         .concurrency
         .clone()
         .try_acquire_owned()
-        .map_err(|_| GatewayError {
-            upstream_response: None,
-            status: StatusCode::TOO_MANY_REQUESTS,
-            code: "gateway_busy",
-            message: "gateway concurrency limit reached".into(),
+        .map_err(|_| {
+            usage.failure("gateway_busy");
+            GatewayError {
+                upstream_response: None,
+                status: StatusCode::TOO_MANY_REQUESTS,
+                code: "gateway_busy",
+                message: "gateway concurrency limit reached".into(),
+            }
         })?;
     let deadline = tokio::time::Instant::now() + gateway.timeout;
     let start = async {
@@ -371,7 +392,14 @@ async fn respond(
     };
     let mut running = tokio::time::timeout_at(deadline, start)
         .await
-        .map_err(|_| timeout_error())??;
+        .map_err(|_| {
+            usage.failure("upstream_timeout");
+            timeout_error()
+        })?
+        .map_err(|e| {
+            usage.failure(e.code);
+            e
+        })?;
     let upstream_headers = forward_response_headers(&running.headers);
     let mut accumulator = crate::output::OutputAccumulator::default();
     if stream {
@@ -383,6 +411,7 @@ async fn respond(
             loop {
                 match tokio::time::timeout_at(deadline, running.events.recv()).await {
                     Ok(Some(mut event)) => {
+                        usage.observe(&event.value);
                         if aggregate_output && accumulator.observe(&mut event.value) {
                             event.bytes = Bytes::from(format!("event: {}\ndata: {}\n\n",event.value["type"].as_str().unwrap_or("message"),event.value));
                         }
@@ -404,6 +433,7 @@ async fn respond(
             match terminal {
                 Some(event) if !event.successful() || parsed.is_ok() => { yield Ok(event.bytes); }
                 _ => {
+                    usage.failure(if timed_out { "upstream_timeout" } else { "upstream_error" });
                     let event = json!({"type":"error", "sequence_number":sequence, "code":"upstream_error", "message":parsed.err().unwrap_or_else(|| "upstream closed without a terminal response".into()), "param":null});
                     yield Ok(Bytes::from(format!("event: error\ndata: {event}\n\n")));
                 }
@@ -426,10 +456,15 @@ async fn respond(
         let terminal = loop {
             let mut event = tokio::time::timeout_at(deadline, running.events.recv())
                 .await
-                .map_err(|_| timeout_error())?
+                .map_err(|_| {
+                    usage.failure("upstream_timeout");
+                    timeout_error()
+                })?
                 .ok_or_else(|| {
+                    usage.failure("upstream_error");
                     GatewayError::internal("upstream closed without terminal response")
                 })?;
+            usage.observe(&event.value);
             if aggregate_output {
                 accumulator.observe(&mut event.value);
             }
@@ -439,10 +474,19 @@ async fn respond(
         };
         let parsed = tokio::time::timeout_at(deadline, &mut running.finished)
             .await
-            .map_err(|_| timeout_error())?
-            .map_err(GatewayError::internal)?;
+            .map_err(|_| {
+                usage.failure("upstream_timeout");
+                timeout_error()
+            })?
+            .map_err(|e| {
+                usage.failure("upstream_error");
+                GatewayError::internal(e)
+            })?;
         if terminal.successful() {
-            parsed.map_err(GatewayError::internal)?;
+            parsed.map_err(|e| {
+                usage.failure("upstream_error");
+                GatewayError::internal(e)
+            })?;
         }
         let response = terminal
             .value
@@ -489,6 +533,7 @@ async fn compact(
     body: Result<Json<CreateResponse>, JsonRejection>,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    let telemetry = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers);
     let headers = crate::headers::request_headers(&headers);
     let Json(input) = body.map_err(|e| GatewayError::invalid(e.body_text()))?;
     let model = gateway
@@ -504,6 +549,7 @@ async fn compact(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let lite = input.uses_responses_lite(model);
     let mut request = input.into_codex(model, &session_id)?;
+    let usage = telemetry.start(&request.model, "compact", "http");
     request
         .input
         .push(codex_protocol::models::ResponseItem::CompactionTrigger {});
@@ -527,6 +573,7 @@ async fn compact(
         )),
         false,
         true,
+        usage,
     )
     .await?;
     let bytes = axum::body::to_bytes(result.into_body(), 64 * 1024 * 1024)

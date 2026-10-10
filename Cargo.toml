@@ -26,6 +26,9 @@ tokio = { version = "1", features = ["full"] }
 toml = "0.9.5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+opentelemetry = "0.31"
+opentelemetry_sdk = "0.31"
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "metrics", "logs", "http-proto", "reqwest-blocking-client", "reqwest-rustls"] }
 uuid = { version = "1", features = ["v4", "v5"] }
 codex-api = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
 codex-client = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
@@ -45,6 +48,7 @@ codex-tools = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec
 codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
 
 [dev-dependencies]
+opentelemetry_sdk = { version = "0.31", features = ["testing"] }
 reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 tempfile = "3"
 
