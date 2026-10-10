@@ -57,7 +57,10 @@ async fn main() -> anyhow::Result<()> {
             codex_api_gateway::transfers::Transfers::new(backend.factory.clone(), &url, timeout)
         })
         .transpose()?;
+    let telemetry =
+        tokio::task::spawn_blocking(codex_api_gateway::telemetry::Telemetry::from_env).await??;
     let gateway = Gateway {
+        telemetry: telemetry.clone(),
         backend,
         models,
         key,
@@ -71,8 +74,19 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(listen=%listener.local_addr()?, "Codex Responses gateway ready");
     axum::serve(listener, router(gateway))
         .with_graceful_shutdown(async {
+            #[cfg(unix)]
+            {
+                let mut terminate =
+                    tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                        .expect("install SIGTERM handler");
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            }
+            #[cfg(not(unix))]
             let _ = tokio::signal::ctrl_c().await;
         })
         .await?;
+    if let Some(telemetry) = telemetry {
+        tokio::task::spawn_blocking(move || telemetry.shutdown()).await?;
+    }
     Ok(())
 }

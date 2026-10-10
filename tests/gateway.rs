@@ -305,6 +305,7 @@ impl Harness {
                 .unwrap()
         });
         let app = router(Gateway {
+            telemetry: None,
             backend,
             models,
             key: Some("client-key".into()),
