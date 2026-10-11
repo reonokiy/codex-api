@@ -613,13 +613,35 @@ async fn rejects_invalid_safety_identifier_before_contacting_upstream() {
 }
 
 #[tokio::test]
+async fn public_tool_choice_is_forwarded_without_downgrading_required() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for choice in ["auto", "none", "required"] {
+        let response = h
+            .request(json!({
+                "input": "Use the probe tool", "tool_choice": choice,
+                "tools": [{"type": "function", "name": "probe", "parameters": {"type": "object", "properties": {}}}]
+            }))
+            .send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["status"],
+            "completed"
+        );
+        let received = h.fake.received.lock().unwrap();
+        let request = &received.last().unwrap().1;
+        assert_eq!(request["tool_choice"], choice);
+        assert_eq!(request["tools"][0]["name"], "probe");
+    }
+}
+
+#[tokio::test]
 async fn rejects_unsupported_features_before_contacting_upstream() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
     for body in [
         json!({"input":"hi","store":true}),
         json!({"input":"hi","previous_response_id":"resp_1"}),
         json!({"input":"hi","temperature":0.5}),
-        json!({"input":"hi","tool_choice":"none"}),
+        json!({"input":"hi","tool_choice":"invalid"}),
         json!({"input":[{"type":"unknown"}]}),
     ] {
         let response = h.request(body).send().await.unwrap();

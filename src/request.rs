@@ -125,9 +125,13 @@ impl CreateResponse {
                 "store=true is not supported; send full input history",
             ));
         }
-        if self.tool_choice.as_deref().is_some_and(|v| v != "auto") {
+        if self
+            .tool_choice
+            .as_deref()
+            .is_some_and(|v| !["auto", "none", "required"].contains(&v))
+        {
             return Err(GatewayError::invalid(
-                "Codex uses tool_choice=auto; other choices are not supported",
+                "tool_choice supports auto, none, and required",
             ));
         }
         if self.include.as_ref().is_some_and(|values| {
@@ -275,7 +279,7 @@ impl CreateResponse {
             model: model.slug.clone(),
             input,
             tools,
-            tool_choice: "auto".into(),
+            tool_choice: self.tool_choice.unwrap_or_else(|| "auto".into()),
             parallel_tool_calls: self.parallel_tool_calls.unwrap_or(true) && !lite,
             reasoning: Some(reasoning),
             store: false,
@@ -357,6 +361,45 @@ fn normalize_input(value: Value) -> Result<Vec<ResponseItem>, GatewayError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_choice_is_preserved_for_standard_and_lite_requests() {
+        for lite in [false, true] {
+            let mut model = codex_models_manager::model_info::model_info_from_slug("test-model");
+            model.use_responses_lite = lite;
+            for choice in [Value::Null, json!("auto"), json!("none"), json!("required")] {
+                let request: CreateResponse = serde_json::from_value(json!({
+                    "model": "test-model", "input": "Use the probe tool",
+                    "tool_choice": choice,
+                    "tools": [{"type": "function", "name": "probe", "parameters": {"type": "object", "properties": {}}}]
+                })).unwrap();
+                let converted = request.into_codex(&model, "test-session").unwrap();
+                assert_eq!(converted.tool_choice, choice.as_str().unwrap_or("auto"));
+                if lite {
+                    assert!(converted.tools.is_none());
+                    assert!(matches!(
+                        converted.input.first(),
+                        Some(ResponseItem::AdditionalTools { .. })
+                    ));
+                } else {
+                    assert_eq!(
+                        serde_json::to_value(converted.tools).unwrap()[0]["name"],
+                        "probe"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_tool_choice_is_rejected() {
+        let request: CreateResponse = serde_json::from_value(json!({
+            "model": "test-model", "input": "Hello", "tool_choice": "invalid"
+        }))
+        .unwrap();
+        let model = codex_models_manager::model_info::model_info_from_slug("test-model");
+        assert!(request.into_codex(&model, "test-session").is_err());
+    }
 
     fn schema_request() -> Value {
         json!({
