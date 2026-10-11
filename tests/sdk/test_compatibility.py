@@ -101,6 +101,14 @@ def test_request_controls(client, model, request_kwargs):
         service_tier='auto', include=['reasoning.encrypted_content'])))
 
 
+@pytest.mark.parametrize('choice', ['auto', 'none', 'required'])
+def test_tool_choice(client, model, request_kwargs, choice):
+    completed(client.responses.create(**request_kwargs(model,
+        tool_choice=choice,
+        tools=[{'type': 'function', 'name': 'probe',
+                'parameters': {'type': 'object', 'properties': {}}}])))
+
+
 def test_raw_response(client, model, request_kwargs):
     raw = client.responses.with_raw_response.create(**request_kwargs(model))
     assert raw.status_code == 200
@@ -197,7 +205,7 @@ def test_images_edit(client, config):
     pytest.param({'max_output_tokens': 0}, id='max-output-tokens-zero'),
     pytest.param({'previous_response_id': 'resp_1'}, id='previous-response-id'),
     pytest.param({'background': True}, id='background'),
-    pytest.param({'tool_choice': 'required'}, id='tool-choice'),
+    pytest.param({'tool_choice': 'invalid'}, id='tool-choice'),
     pytest.param({'text': {'format': {'type': 'json_object'}}}, id='json-object'),
 ])
 def test_unsupported_values(client, request_kwargs, params):
