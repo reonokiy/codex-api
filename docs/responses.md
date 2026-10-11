@@ -20,7 +20,7 @@ Codex CLI can use the same `/v1` base URL as OpenAI SDK clients. Streaming reque
 | `stream` | Boolean, default `false`; upstream always streams |
 | `store` | Only `false` supported |
 | `tools` | Array, default `[]`; see below |
-| `tool_choice` | Only `"auto"` supported |
+| `tool_choice` | `"auto"` (default), `"none"`, or `"required"`; forwarded unchanged to Codex |
 | `parallel_tool_calls` | Boolean, default `true`; disabled for Responses Lite |
 | `reasoning` | Optional object; `effort` is a model-supported string, `summary` is `auto`, `concise`, `detailed` or `none`; `context` is `auto`, `current_turn` or `all_turns` |
 | `text` | `{ "verbosity"?: "low"\|"medium"\|"high", "format"?: object }` |
