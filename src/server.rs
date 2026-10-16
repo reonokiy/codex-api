@@ -396,9 +396,8 @@ async fn respond(
             usage.failure("upstream_timeout");
             timeout_error()
         })?
-        .map_err(|e| {
+        .inspect_err(|e| {
             usage.failure(e.code);
-            e
         })?;
     let upstream_headers = forward_response_headers(&running.headers);
     let mut accumulator = crate::output::OutputAccumulator::default();
