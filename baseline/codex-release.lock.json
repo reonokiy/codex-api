@@ -1,29 +1,29 @@
 {
   "repository": "https://github.com/openai/codex.git",
-  "release": "0.162.1",
-  "tag": "rust-v0.162.1",
-  "tag_object": "7a078f6bb4ce0dc2a81408b334ce52979d92c603",
-  "commit": "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d",
-  "published_at": "2026-10-09T19:44:51Z",
-  "release_url": "https://github.com/openai/codex/releases/tag/rust-v0.162.1",
+  "release": "0.163.0",
+  "tag": "rust-v0.163.0",
+  "tag_object": "129b8ec7ee6f4511557a4856279f529025c25af4",
+  "commit": "83086188ae0614bd882818ff1aa23f3194962012",
+  "published_at": "2026-10-15T21:30:38Z",
+  "release_url": "https://github.com/openai/codex/releases/tag/rust-v0.163.0",
   "prerelease": false,
   "companions": [
     {
       "asset": "bwrap-x86_64-unknown-linux-musl.tar.gz",
-      "url": "https://github.com/openai/codex/releases/download/rust-v0.162.1/bwrap-x86_64-unknown-linux-musl.tar.gz",
-      "sha256": "fa78980959466bd7a04643384c6293511f06a3140345c1237cfc75ccde7f3eea",
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/bwrap-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "bcc196b1d25dc2c2b912dcedf780b562deb0552f3c50648761ced145c3466a23",
       "executable": "codex-resources/bwrap"
     },
     {
       "asset": "codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
-      "url": "https://github.com/openai/codex/releases/download/rust-v0.162.1/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
-      "sha256": "458239ea45c1fc508d89695f180ab352f2834709a8a46929a4466f4f04399ada",
+      "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-code-mode-host-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "314263128ba6592e7e807c265deeaf928a692b72dcbfeb5e0b20c9423b703529",
       "executable": "codex-code-mode-host"
     }
   ],
   "binary": {
     "asset": "codex-x86_64-unknown-linux-musl.tar.gz",
-    "url": "https://github.com/openai/codex/releases/download/rust-v0.162.1/codex-x86_64-unknown-linux-musl.tar.gz",
-    "sha256": "86f268d81b898f3e144c5ecff2ad2fda2c5802e042d6195b72538fe0fa125057"
+    "url": "https://github.com/openai/codex/releases/download/rust-v0.163.0/codex-x86_64-unknown-linux-musl.tar.gz",
+    "sha256": "beb339e8ecd9ba057a6bb2dc81ad8ca474812edfbf0fc5056ca818797648dde4"
   }
 }

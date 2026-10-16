@@ -6,8 +6,8 @@ license = "Apache-2.0"
 rust-version = "1.95"
 
 [dependencies]
-codex-context-fragments = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-websocket-client = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-context-fragments = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-websocket-client = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
 tokio-tungstenite = "0.28"
 zstd = "0.13"
 anyhow = "1"
@@ -30,22 +30,22 @@ opentelemetry = "0.31"
 opentelemetry_sdk = "0.31"
 opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "metrics", "logs", "http-proto", "reqwest-blocking-client", "reqwest-rustls"] }
 uuid = { version = "1", features = ["v4", "v5"] }
-codex-api = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-client = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-http-client = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-login = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-model-provider = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-model-provider-info = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-models-manager = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-protocol = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
-codex-config = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-api = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-client = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-http-client = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-login = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-model-provider = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-model-provider-info = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-models-manager = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-protocol = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
+codex-config = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
 
 
-codex-features = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-features = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
 
-codex-tools = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-tools = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
 
-codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "092d3acd6bec3e3a14bdc7e7a2810ab628ab759d" }
+codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "83086188ae0614bd882818ff1aa23f3194962012" }
 
 [dev-dependencies]
 opentelemetry_sdk = { version = "0.31", features = ["testing"] }

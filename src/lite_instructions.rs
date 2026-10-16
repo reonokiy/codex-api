@@ -1,4 +1,4 @@
-// Copied from Codex 0.162.1 core/context/base_instructions.rs; Apache-2.0.
+// Adapted from Codex 0.163.0 core/src/context/base_instructions.rs; Apache-2.0.
 use codex_context_fragments::ContextualUserFragment;
 use codex_protocol::models::ContentItemKind;
 
