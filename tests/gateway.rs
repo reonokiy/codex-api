@@ -2,6 +2,8 @@
 mod file_cases;
 #[path = "cases/native.rs"]
 mod native_cases;
+#[path = "cases/responses_limits.rs"]
+mod responses_limit_cases;
 mod support;
 use axum::{
     Router,
@@ -220,7 +222,12 @@ impl Harness {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_url = format!("http://{}", listener.local_addr().unwrap());
         let app = Router::new()
-            .route("/responses", post(upstream).get(upstream_ws))
+            .route(
+                "/responses",
+                post(upstream)
+                    .get(upstream_ws)
+                    .layer(axum::extract::DefaultBodyLimit::max(65 * 1024 * 1024)),
+            )
             .route("/realtime/calls", post(realtime_cases::upstream_call))
             .route("/realtime", axum::routing::get(upstream_ws))
             .route(
@@ -683,7 +690,7 @@ async fn native_rejects_unauthorized_and_nonstream_and_decompression_bombs() {
             .status(),
         StatusCode::BAD_REQUEST
     );
-    let bomb = zstd::encode_all(vec![b' '; 16 * 1024 * 1024 + 1].as_slice(), 1).unwrap();
+    let bomb = zstd::encode_all(vec![b' '; 64 * 1024 * 1024 + 1].as_slice(), 1).unwrap();
     assert_eq!(
         client
             .post(&url)

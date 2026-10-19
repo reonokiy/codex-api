@@ -2,7 +2,7 @@ use crate::{CODEX_REV, backend::Backend, error::GatewayError, request::CreateRes
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Query, State, rejection::JsonRejection},
+    extract::{DefaultBodyLimit, FromRequest, Query, Request, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -12,6 +12,8 @@ use codex_protocol::openai_models::ModelInfo;
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
+
+const RESPONSES_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 pub struct Gateway {
     pub backend: Backend,
@@ -41,15 +43,24 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/codex/images/edits", post(crate::images::edit))
         .route("/backend-api/codex/images/generations", post(crate::images::generate))
         .route("/backend-api/codex/images/edits", post(crate::images::edit))
-        .route("/v1/responses", post(create).get(crate::websocket::upgrade))
+        .route(
+            "/v1/responses",
+            post(create)
+                .layer(DefaultBodyLimit::max(RESPONSES_BODY_LIMIT))
+                .get(crate::websocket::upgrade),
+        )
         .route(
             "/codex/responses",
-            post(native_create).get(crate::websocket::upgrade),
+            post(native_create)
+                .layer(DefaultBodyLimit::max(RESPONSES_BODY_LIMIT))
+                .get(crate::websocket::upgrade),
         )
         .route("/codex/models", get(native_models))
         .route(
             "/backend-api/codex/responses",
-            post(native_create).get(crate::websocket::upgrade),
+            post(native_create)
+                .layer(DefaultBodyLimit::max(RESPONSES_BODY_LIMIT))
+                .get(crate::websocket::upgrade),
         )
         .route("/backend-api/codex/models", get(native_models))
         .route("/v1/responses/compact", post(compact))
@@ -124,16 +135,19 @@ async fn models(
 }
 async fn create(
     State(gateway): State<Arc<Gateway>>,
-    headers: HeaderMap,
-    body: Result<Json<CreateResponse>, JsonRejection>,
+    request: Request,
 ) -> Result<Response, GatewayError> {
+    let headers = request.headers().clone();
     authorize(&gateway, &headers)?;
-    let Json(input) = body.map_err(|e| GatewayError {
-        upstream_response: None,
-        status: e.status(),
-        code: "invalid_request_error",
-        message: e.body_text(),
-    })?;
+    let (parts, body) = request.into_parts();
+    let body = Bytes::from_request(Request::from_parts(parts.clone(), body), &())
+        .await
+        .map_err(|e| crate::standalone::extraction_error(e.status(), e.body_text()))?;
+    let body = decode_responses_body(&headers, body).await?;
+    let Json(input) =
+        Json::<CreateResponse>::from_request(Request::from_parts(parts, Body::from(body)), &())
+            .await
+            .map_err(|e| crate::standalone::extraction_error(e.status(), e.body_text()))?;
     let model = gateway
         .models
         .iter()
@@ -222,41 +236,7 @@ async fn native_create(
     body: Bytes,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
-    let body = match headers
-        .get("content-encoding")
-        .and_then(|v| v.to_str().ok())
-    {
-        None | Some("identity") => body.to_vec(),
-        Some("zstd") => tokio::task::spawn_blocking(move || {
-            use std::io::Read;
-            let decoder = zstd::stream::read::Decoder::new(body.as_ref())
-                .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
-            let mut decoded = Vec::new();
-            decoder
-                .take(16 * 1024 * 1024 + 1)
-                .read_to_end(&mut decoded)
-                .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
-            if decoded.len() > 16 * 1024 * 1024 {
-                return Err(GatewayError {
-                    upstream_response: None,
-                    status: StatusCode::PAYLOAD_TOO_LARGE,
-                    code: "invalid_request_error",
-                    message: "decoded body exceeds 16 MiB".into(),
-                });
-            }
-            Ok(decoded)
-        })
-        .await
-        .map_err(GatewayError::internal)??,
-        _ => {
-            return Err(GatewayError {
-                upstream_response: None,
-                status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                code: "invalid_request_error",
-                message: "supported content encodings: identity, zstd".into(),
-            });
-        }
-    };
+    let body = decode_responses_body(&headers, body).await?;
     let raw: Box<serde_json::value::RawValue> =
         serde_json::from_slice(&body).map_err(|e| GatewayError::invalid(e.to_string()))?;
     let body: Value =
@@ -268,6 +248,42 @@ async fn native_create(
     }
     let forwarded = forward_request_headers(&headers);
     respond(gateway, None, Some((raw, forwarded)), true, false).await
+}
+
+async fn decode_responses_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, GatewayError> {
+    match headers
+        .get("content-encoding")
+        .and_then(|v| v.to_str().ok())
+    {
+        None | Some("identity") => Ok(body),
+        Some("zstd") => tokio::task::spawn_blocking(move || {
+            use std::io::Read;
+            let decoder = zstd::stream::read::Decoder::new(body.as_ref())
+                .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
+            let mut decoded = Vec::new();
+            decoder
+                .take(RESPONSES_BODY_LIMIT as u64 + 1)
+                .read_to_end(&mut decoded)
+                .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
+            if decoded.len() > RESPONSES_BODY_LIMIT {
+                return Err(GatewayError {
+                    upstream_response: None,
+                    status: StatusCode::PAYLOAD_TOO_LARGE,
+                    code: "invalid_request_error",
+                    message: "decoded body exceeds 64 MiB".into(),
+                });
+            }
+            Ok(Bytes::from(decoded))
+        })
+        .await
+        .map_err(GatewayError::internal)?,
+        _ => Err(GatewayError {
+            upstream_response: None,
+            status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            code: "invalid_request_error",
+            message: "supported content encodings: identity, zstd".into(),
+        }),
+    }
 }
 
 pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap {
@@ -451,6 +467,11 @@ async fn compact(
     authorize(&gateway, &headers)?;
     let headers = crate::headers::request_headers(&headers);
     let Json(input) = body.map_err(|e| GatewayError::invalid(e.body_text()))?;
+    if input.client_metadata.is_some() {
+        return Err(GatewayError::invalid(
+            "client_metadata is not supported for compact",
+        ));
+    }
     let model = gateway
         .models
         .iter()
