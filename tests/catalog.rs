@@ -73,6 +73,7 @@ async fn startup_catalog_exposes_new_models_and_uses_their_capabilities() {
         );
     }
     let app = router(Gateway {
+        telemetry: None,
         backend,
         models,
         key: None,

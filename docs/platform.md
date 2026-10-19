@@ -11,7 +11,11 @@ This namespace also reaches public Skills, Agents, Conversations, Realtime contr
 
 [Official API reference](https://developers.openai.com/api/reference)
 
-## OAuth audio transcription
+## OAuth audio forwarding
+
+`/v1/audio` and `/v1/audio/*` forward to `chatgpt_base_url` plus `/audio` and `/audio/*`, defaulting to `https://chatgpt.com/backend-api/audio`. The gateway uses saved ChatGPT OAuth credentials and preserves the request method, query, content type and body, and the upstream response status, headers and body. Available operations depend on the backend API.
+
+### Transcription
 
 `POST /v1/audio/transcriptions` · Aliases: `/transcribe`, `/backend-api/transcribe`
 
@@ -26,3 +30,9 @@ curl http://127.0.0.1:8080/v1/audio/transcriptions \
 ```
 
 The [Codex OAuth client](https://github.com/openai/codex/blob/4e119a3b38e4a4decfccb003acecabc4614142b6/codex-rs/tui/src/voice.rs#L787) reads the transcript from the JSON `text` field. Requests and upstream responses, including errors, are forwarded unchanged. The shared request limit is 16 MiB.
+
+If transcription returns HTML, inspect the audio log entries: `audio request received` records the incoming method and path, `audio upstream request` records the effective upstream host and path, and `audio upstream response` records status and Content-Type. HTML responses and unsuccessful statuses produce warnings; the original response remains unchanged. `audio upstream request failed` records a fixed failure kind for transport/API errors. These entries exclude queries, credentials and bodies.
+
+The default log filter is `codex_api_gateway=info`. If `RUST_LOG` overrides it, include `codex_api_gateway=info` to see incoming and outgoing audio entries. Reproduce the request and compare the effective target with the expected `/backend-api/transcribe`; a custom `chatgpt_base_url` is used as configured. An incoming entry without an upstream entry points to a failure before forwarding, such as gateway authorization. No incoming entry means the request did not reach an audio handler in this running gateway, or the log filter hides it.
+
+For transport comparison, set `RUST_LOG=codex_api_gateway=debug`. `audio upstream wire request` records the effective User-Agent, originator, Accept, Content-Type, request byte count, explicit Cookie-header presence, whether the shared cookie jar is enabled, and whether additional ChatGPT cookies are configured on the factory. The configured-cookie flag does not inspect infrastructure cookies retained by the shared jar; the explicit Cookie flag does not show cookies attached automatically by it. `audio upstream wire response` records the actual HTTP response version, Server, CF-Mitigated, X-OAI-Request-ID or X-Request-ID, and CF-Ray. These DEBUG entries exclude authorization, cookie values, account identifiers, bodies, full URLs, and queries.

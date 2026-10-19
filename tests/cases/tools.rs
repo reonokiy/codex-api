@@ -282,6 +282,7 @@ http_headers = {{ "x-openai-actor-authorization" = "gateway" }}
     let output = tokio::time::timeout(
         Duration::from_secs(60),
         tokio::process::Command::new(binary)
+            .stdin(std::process::Stdio::null())
             .env("CODEX_HOME", home.path())
             .env("CODEX_GATEWAY_API_KEY", "client-key")
             .env_remove("OPENAI_API_KEY")

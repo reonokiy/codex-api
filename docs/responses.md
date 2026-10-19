@@ -2,6 +2,10 @@
 
 `POST /v1/responses` · [Common rules](common.md) · [WebSocket variant](websocket.md)
 
+## Codex CLI compatibility
+
+Codex CLI can use the same `/v1` base URL as OpenAI SDK clients. Streaming requests containing `client_metadata`, and requests encoded with `Content-Encoding: zstd`, use the [native Responses contract](codex-responses.md): original payloads (including tools, Lite items and future fields) and SSE events are preserved. Native requests require `model` and `stream: true`; upstream validates their fields. Other requests use the public schema below.
+
 ## Request
 
 ```json
@@ -16,22 +20,24 @@
 | `stream` | Boolean, default `false`; upstream always streams |
 | `store` | Only `false` supported |
 | `tools` | Array, default `[]`; see below |
-| `tool_choice` | Only `"auto"` supported |
+| `tool_choice` | `"auto"` (default), `"none"`, or `"required"`; forwarded unchanged to Codex |
 | `parallel_tool_calls` | Boolean, default `true`; disabled for Responses Lite |
 | `reasoning` | Optional object; `effort` is a model-supported string, `summary` is `auto`, `concise`, `detailed` or `none`; `context` is `auto`, `current_turn` or `all_turns` |
 | `text` | `{ "verbosity"?: "low"\|"medium"\|"high", "format"?: object }` |
 | `text.format` | `{"type":"text"}` or `{ "type":"json_schema", "name":string, "schema":object, "strict"?:boolean }`; schema strict defaults to `true` |
 | `service_tier` | `"auto"` or a tier supported by the model |
 | `prompt_cache_key` | Optional string; defaults to the request session ID |
+| `safety_identifier` | Optional string (at most 64 characters) or `null`; accepted for client compatibility and discarded locally, never forwarded to Codex |
+| `max_output_tokens` | Positive unsigned 64-bit integer or `null`; accepted as a compatibility hint for clients such as Magpie, but not forwarded or enforced because Codex has no output-token limit parameter |
 | `include` | Array of `"reasoning.encrypted_content"`, `"web_search_call.action.sources"`, `"web_search_call.results"`; encrypted reasoning is always requested |
 
 Known reasoning efforts are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra` and `persistent`; only values advertised by the selected model in the startup catalog are accepted, including model-defined values. Omitted reasoning and verbosity use that model's defaults.
 
 `reasoning.generate_summary` is accepted as a deprecated alias of `summary`. Explicit `reasoning.context` values are preserved; `auto` and `current_turn` select regular Responses because Lite requires `all_turns`. Omitted/null context retains the Lite default of `all_turns` when the request uses Lite (and is omitted for regular requests). Requests containing hosted `web_search` always use regular Responses, where the hosted tool can execute. See the [SDK compatibility suite and parameter audit](sdk-compatibility.md).
 
-Message inputs accept `role` (`user`, `assistant`, `system`, `developer`) and string or Codex content arrays. Text and image content, reasoning, function/custom calls and their outputs, web-search calls and Codex compaction items are supported. Functions/custom tools run in the caller, which submits their outputs in the next request.
+Message inputs accept `role` (`user`, `assistant`, `system`, `developer`) and string or Codex content arrays. Public `system` messages are forwarded as `developer` messages because Codex rejects the `system` input role. Their content and position are preserved, and explicit top-level `instructions` retain their content and are prepended as a classified developer message, matching Codex 0.162.1 (for both standard and lite requests). Text and image content, reasoning, function/custom calls and their outputs, web-search calls and Codex compaction items are supported. Functions/custom tools run in the caller, which submits their outputs in the next request.
 
-HTTP continuation requires complete input history. `previous_response_id`, `background`, temperature/sampling controls, output-token limits and other unlisted top-level fields are not implemented here.
+HTTP continuation requires complete input history. `previous_response_id`, `background`, temperature/sampling controls and other unlisted top-level fields are not implemented here. `max_output_tokens` does not cap generated output; clients requiring a hard limit must not rely on it.
 
 ## Tools
 

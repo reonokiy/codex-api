@@ -3,6 +3,33 @@ use super::*;
 const HTTP_LIMIT: usize = 64 * 1024 * 1024;
 
 #[tokio::test]
+async fn public_http_streaming_metadata_keeps_native_selection() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
+    let response = h
+        .request(json!({
+            "stream":true,
+            "input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}],
+            "client_metadata":{"trace":"keep"}
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response
+            .text()
+            .await
+            .unwrap()
+            .contains("response.completed")
+    );
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].1["client_metadata"]["trace"], "keep");
+    assert_eq!(received[0].1["input"].as_array().unwrap().len(), 1);
+    assert_eq!(received[0].1["input"][0]["role"], "user");
+}
+
+#[tokio::test]
 async fn native_http_preserves_done_items_when_terminal_output_is_empty() {
     let mut fixture = events();
     *fixture.last_mut().unwrap() = completed(vec![]);
@@ -63,7 +90,16 @@ async fn responses_accept_large_images_over_http_with_identity_and_zstd() {
             );
             let received = h.fake.received.lock().unwrap();
             assert_eq!(received.len(), 1);
-            assert!(received[0].1["input"][0]["content"][0]["image_url"] == image);
+            let input = received[0].1["input"].as_array().unwrap();
+            let users: Vec<_> = input.iter().filter(|item| item["role"] == "user").collect();
+            assert_eq!(users.len(), 1);
+            assert_eq!(users[0]["content"].as_array().unwrap().len(), 1);
+            assert!(users[0]["content"][0]["image_url"] == image);
+            if path == "/v1/responses" && !compressed {
+                assert_eq!(input[0]["role"], "developer");
+            } else {
+                assert_eq!(input.len(), 1);
+            }
         }
     }
 }

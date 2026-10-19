@@ -3,7 +3,7 @@
 A gateway that uses your ChatGPT subscription through the Codex Rust libraries.
 
 Supports Responses, streaming, WebSocket, images, files, search and Realtime.
-Built on Codex **0.160.0** and Rust **1.95.0**.
+Built on Codex **0.162.1** and Rust **1.95.0**.
 
 The gateway loads your account's model catalog at startup, including
 `gpt-6-sol` and `gpt-6-luna` when available. Restart to refresh the catalog;
@@ -60,6 +60,25 @@ print(response.output_text)
 
 Use Responses instead of Chat Completions. Supported parameters and account
 requirements vary by endpoint; see the [API reference](docs/index.md).
+
+### Claude Code through Magpie
+
+Magpie converts Claude Code's Anthropic requests to this gateway's Responses API.
+Use the Responses endpoint rather than Chat Completions:
+
+```sh
+magpie provider add "Nokiy Codex" id=nokiy-codex \
+  responses=https://api.internal.nokiy.net/codex/v1 \
+  key="$CODEX_GATEWAY_API_KEY" models=gpt-6.1-sol,gpt-6-astra,gpt-6-sol,gpt-6-luna
+magpie provider test nokiy-codex gpt-6.1-sol
+magpie claude nokiy-codex/gpt-6.1-sol
+magpie serve
+```
+
+Keep Magpie running while Claude Code uses it. Switch models with
+`magpie claude nokiy-codex/<model>` or Claude Code's `/model` picker.
+Magpie's `max_output_tokens` hint is accepted but does not enforce a generation
+limit; see [the request contract](docs/responses.md).
 
 - [Connect another Codex](docs/native.md#connect-another-codex)
 - [Standalone search](docs/search.md)

@@ -24,6 +24,7 @@ pub async fn upgrade(
     ws: WebSocketUpgrade,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    let telemetry = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers);
     let headers = crate::headers::request_headers(&headers);
     let permit = gateway
         .concurrency
@@ -56,7 +57,16 @@ pub async fn upgrade(
         .max_frame_size(16 * 1024 * 1024)
         .on_upgrade(move |client| async move {
             let _permit = permit;
-            relay(client, upstream, idle, public, &gateway.models, &session).await;
+            relay_with_telemetry(
+                client,
+                upstream,
+                idle,
+                public,
+                &gateway.models,
+                &session,
+                telemetry,
+            )
+            .await;
         });
     response
         .headers_mut()
@@ -65,15 +75,39 @@ pub async fn upgrade(
 }
 
 pub(crate) async fn relay<S, E>(
-    mut client: WebSocket,
-    mut upstream: S,
-    idle: Duration,
+    client: WebSocket,
+    upstream: S,
+    idle: std::time::Duration,
     public: bool,
     models: &[codex_protocol::openai_models::ModelInfo],
     session: &str,
 ) where
     S: futures::Stream<Item = Result<Upstream, E>> + futures::Sink<Upstream> + Unpin,
 {
+    relay_with_telemetry(
+        client,
+        upstream,
+        idle,
+        public,
+        models,
+        session,
+        crate::telemetry::RequestTelemetry::new(None, &HeaderMap::new()),
+    )
+    .await;
+}
+
+pub(crate) async fn relay_with_telemetry<S, E>(
+    mut client: WebSocket,
+    mut upstream: S,
+    idle: Duration,
+    public: bool,
+    models: &[codex_protocol::openai_models::ModelInfo],
+    session: &str,
+    telemetry: crate::telemetry::RequestTelemetry,
+) where
+    S: futures::Stream<Item = Result<Upstream, E>> + futures::Sink<Upstream> + Unpin,
+{
+    let mut usage = crate::telemetry::WebSocketUsage::new(telemetry);
     let mut accumulator = crate::output::OutputAccumulator::default();
     loop {
         let step = async {
@@ -92,6 +126,7 @@ pub(crate) async fn relay<S, E>(
                                     }
                                 }
                             } else { v.as_str().to_owned() };
+                            usage.request(&text);
                             Upstream::Text(text.into())
                         },
                         Message::Binary(v) => Upstream::Binary(v),
@@ -107,6 +142,7 @@ pub(crate) async fn relay<S, E>(
                     let message = match message {
                         Upstream::Text(v) => {
                             let mut text = v.as_str().to_owned();
+                            if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text) { usage.observe(&event); }
                             if public && let Ok(mut event) = serde_json::from_str::<serde_json::Value>(&text) && accumulator.observe(&mut event) { text = event.to_string(); }
                             Message::Text(text.into())
                         },

@@ -2,7 +2,7 @@ use crate::{CODEX_REV, backend::Backend, error::GatewayError, request::CreateRes
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, FromRequest, Query, Request, State, rejection::JsonRejection},
+    extract::{DefaultBodyLimit, Query, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -22,6 +22,7 @@ pub struct Gateway {
     pub concurrency: Arc<Semaphore>,
     pub timeout: Duration,
     pub transfers: Option<crate::transfers::Transfers>,
+    pub telemetry: Option<Arc<crate::telemetry::Telemetry>>,
 }
 
 pub fn router(gateway: Gateway) -> Router {
@@ -45,7 +46,7 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/backend-api/codex/images/edits", post(crate::images::edit))
         .route(
             "/v1/responses",
-            post(create)
+            post(compatible_create)
                 .layer(DefaultBodyLimit::max(RESPONSES_BODY_LIMIT))
                 .get(crate::websocket::upgrade),
         )
@@ -127,27 +128,65 @@ pub(crate) fn authorize(gateway: &Gateway, headers: &HeaderMap) -> Result<(), Ga
 async fn models(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
-) -> Result<Json<Value>, GatewayError> {
+    Query(query): Query<std::collections::HashMap<String, String>>,
+) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    // Codex requests its capability catalog with a client_version query.
+    if query.contains_key("client_version") {
+        return native_models(State(gateway), headers, Query(query)).await;
+    }
     Ok(Json(
         json!({"object":"list", "data":gateway.models.iter().map(|v| json!({"id":v.slug,"object":"model","created":0,"owned_by":"openai"})).collect::<Vec<_>>()}),
-    ))
+    ).into_response())
 }
+// Prepared Codex requests must bypass the public SDK adapter: adapting them
+// loses native tools, Responses Lite items, and current/future protocol fields.
+async fn compatible_create(
+    State(gateway): State<Arc<Gateway>>,
+    request: axum::extract::Request,
+) -> Result<Response, GatewayError> {
+    use axum::extract::FromRequest;
+    authorize(&gateway, request.headers())?;
+    let (parts, body) = request.into_parts();
+    let bytes = Bytes::from_request(axum::extract::Request::from_parts(parts.clone(), body), &())
+        .await
+        .map_err(|e| GatewayError {
+            upstream_response: None,
+            status: e.status(),
+            code: "invalid_request_error",
+            message: e.body_text(),
+        })?;
+    let compressed = parts
+        .headers
+        .get("content-encoding")
+        .is_some_and(|v| v == "zstd");
+    let native = serde_json::from_slice::<Value>(&bytes)
+        .is_ok_and(|body| body["stream"] == true && body.get("client_metadata").is_some());
+    if compressed || native {
+        return native_create(State(gateway), parts.headers, bytes).await;
+    }
+    let bytes = decode_responses_body(&parts.headers, bytes).await?;
+    let headers = parts.headers.clone();
+    let input = Json::<CreateResponse>::from_request(
+        axum::extract::Request::from_parts(parts, Body::from(bytes)),
+        &(),
+    )
+    .await;
+    create(State(gateway), headers, input).await
+}
+
 async fn create(
     State(gateway): State<Arc<Gateway>>,
-    request: Request,
+    headers: HeaderMap,
+    body: Result<Json<CreateResponse>, JsonRejection>,
 ) -> Result<Response, GatewayError> {
-    let headers = request.headers().clone();
     authorize(&gateway, &headers)?;
-    let (parts, body) = request.into_parts();
-    let body = Bytes::from_request(Request::from_parts(parts.clone(), body), &())
-        .await
-        .map_err(|e| crate::standalone::extraction_error(e.status(), e.body_text()))?;
-    let body = decode_responses_body(&headers, body).await?;
-    let Json(input) =
-        Json::<CreateResponse>::from_request(Request::from_parts(parts, Body::from(body)), &())
-            .await
-            .map_err(|e| crate::standalone::extraction_error(e.status(), e.body_text()))?;
+    let Json(input) = body.map_err(|e| GatewayError {
+        upstream_response: None,
+        status: e.status(),
+        code: "invalid_request_error",
+        message: e.body_text(),
+    })?;
     let model = gateway
         .models
         .iter()
@@ -158,6 +197,7 @@ async fn create(
             )
         })?;
     let stream = input.stream;
+    let telemetry = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers);
     let headers = crate::headers::request_headers(&headers);
     let session_id = headers
         .get("thread-id")
@@ -167,6 +207,7 @@ async fn create(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let lite = input.uses_responses_lite(model);
     let request = input.into_codex(model, &session_id)?;
+    let usage = telemetry.start(&request.model, "responses", "http");
     if lite {
         let mut headers = forward_request_headers(&headers);
         headers.insert(
@@ -186,10 +227,19 @@ async fn create(
             )),
             stream,
             true,
+            usage,
         )
         .await
     } else {
-        respond(gateway, Some((request, session_id)), None, stream, true).await
+        respond(
+            gateway,
+            Some((request, session_id)),
+            None,
+            stream,
+            true,
+            usage,
+        )
+        .await
     }
 }
 
@@ -247,7 +297,12 @@ async fn native_create(
         ));
     }
     let forwarded = forward_request_headers(&headers);
-    respond(gateway, None, Some((raw, forwarded)), true, false).await
+    let usage = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers).start(
+        body["model"].as_str().unwrap_or("unknown"),
+        "responses",
+        "http",
+    );
+    respond(gateway, None, Some((raw, forwarded)), true, false, usage).await
 }
 
 async fn decode_responses_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, GatewayError> {
@@ -325,16 +380,20 @@ async fn respond(
     native: Option<(Box<serde_json::value::RawValue>, HeaderMap)>,
     stream: bool,
     aggregate_output: bool,
+    mut usage: crate::telemetry::UsageGuard,
 ) -> Result<Response, GatewayError> {
     let permit = gateway
         .concurrency
         .clone()
         .try_acquire_owned()
-        .map_err(|_| GatewayError {
-            upstream_response: None,
-            status: StatusCode::TOO_MANY_REQUESTS,
-            code: "gateway_busy",
-            message: "gateway concurrency limit reached".into(),
+        .map_err(|_| {
+            usage.failure("gateway_busy");
+            GatewayError {
+                upstream_response: None,
+                status: StatusCode::TOO_MANY_REQUESTS,
+                code: "gateway_busy",
+                message: "gateway concurrency limit reached".into(),
+            }
         })?;
     let deadline = tokio::time::Instant::now() + gateway.timeout;
     let start = async {
@@ -347,7 +406,13 @@ async fn respond(
     };
     let mut running = tokio::time::timeout_at(deadline, start)
         .await
-        .map_err(|_| timeout_error())??;
+        .map_err(|_| {
+            usage.failure("upstream_timeout");
+            timeout_error()
+        })?
+        .inspect_err(|e| {
+            usage.failure(e.code);
+        })?;
     let upstream_headers = forward_response_headers(&running.headers);
     let mut accumulator = crate::output::OutputAccumulator::default();
     if stream {
@@ -359,6 +424,7 @@ async fn respond(
             loop {
                 match tokio::time::timeout_at(deadline, running.events.recv()).await {
                     Ok(Some(mut event)) => {
+                        usage.observe(&event.value);
                         if aggregate_output && accumulator.observe(&mut event.value) {
                             event.bytes = Bytes::from(format!("event: {}\ndata: {}\n\n",event.value["type"].as_str().unwrap_or("message"),event.value));
                         }
@@ -380,6 +446,7 @@ async fn respond(
             match terminal {
                 Some(event) if !event.successful() || parsed.is_ok() => { yield Ok(event.bytes); }
                 _ => {
+                    usage.failure(if timed_out { "upstream_timeout" } else { "upstream_error" });
                     let event = json!({"type":"error", "sequence_number":sequence, "code":"upstream_error", "message":parsed.err().unwrap_or_else(|| "upstream closed without a terminal response".into()), "param":null});
                     yield Ok(Bytes::from(format!("event: error\ndata: {event}\n\n")));
                 }
@@ -402,10 +469,15 @@ async fn respond(
         let terminal = loop {
             let mut event = tokio::time::timeout_at(deadline, running.events.recv())
                 .await
-                .map_err(|_| timeout_error())?
+                .map_err(|_| {
+                    usage.failure("upstream_timeout");
+                    timeout_error()
+                })?
                 .ok_or_else(|| {
+                    usage.failure("upstream_error");
                     GatewayError::internal("upstream closed without terminal response")
                 })?;
+            usage.observe(&event.value);
             if aggregate_output {
                 accumulator.observe(&mut event.value);
             }
@@ -415,10 +487,19 @@ async fn respond(
         };
         let parsed = tokio::time::timeout_at(deadline, &mut running.finished)
             .await
-            .map_err(|_| timeout_error())?
-            .map_err(GatewayError::internal)?;
+            .map_err(|_| {
+                usage.failure("upstream_timeout");
+                timeout_error()
+            })?
+            .map_err(|e| {
+                usage.failure("upstream_error");
+                GatewayError::internal(e)
+            })?;
         if terminal.successful() {
-            parsed.map_err(GatewayError::internal)?;
+            parsed.map_err(|e| {
+                usage.failure("upstream_error");
+                GatewayError::internal(e)
+            })?;
         }
         let response = terminal
             .value
@@ -465,6 +546,7 @@ async fn compact(
     body: Result<Json<CreateResponse>, JsonRejection>,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    let telemetry = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers);
     let headers = crate::headers::request_headers(&headers);
     let Json(input) = body.map_err(|e| GatewayError::invalid(e.body_text()))?;
     if input.client_metadata.is_some() {
@@ -485,6 +567,7 @@ async fn compact(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let lite = input.uses_responses_lite(model);
     let mut request = input.into_codex(model, &session_id)?;
+    let usage = telemetry.start(&request.model, "compact", "http");
     request
         .input
         .push(codex_protocol::models::ResponseItem::CompactionTrigger {});
@@ -508,6 +591,7 @@ async fn compact(
         )),
         false,
         true,
+        usage,
     )
     .await?;
     let bytes = axum::body::to_bytes(result.into_body(), 64 * 1024 * 1024)

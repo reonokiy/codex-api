@@ -27,6 +27,10 @@ pub struct CreateResponse {
     pub text: Option<TextInput>,
     pub service_tier: Option<String>,
     pub prompt_cache_key: Option<String>,
+    /// Accepted for public OpenAI compatibility; not forwarded to Codex.
+    pub safety_identifier: Option<String>,
+    /// Compatibility hint only: the Codex upstream has no output-token limit.
+    pub max_output_tokens: Option<u64>,
     pub include: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_client_metadata")]
     pub client_metadata: Option<HashMap<String, String>>,
@@ -87,6 +91,9 @@ pub enum TextFormatInput {
 #[serde(deny_unknown_fields)]
 pub struct JsonFormat {
     pub name: String,
+    /// Accepted for OpenAI compatibility; Codex text controls do not support it.
+    #[serde(rename = "description")]
+    pub _description: Option<String>,
     pub schema: Value,
     pub strict: Option<bool>,
 }
@@ -111,14 +118,32 @@ impl CreateResponse {
         session_id: &str,
     ) -> Result<ResponsesApiRequest, GatewayError> {
         let lite = self.uses_responses_lite(model);
+        if self.max_output_tokens == Some(0) {
+            return Err(GatewayError::invalid(
+                "max_output_tokens must be a positive integer",
+            ));
+        }
+        if self
+            .safety_identifier
+            .as_ref()
+            .is_some_and(|identifier| identifier.chars().count() > 64)
+        {
+            return Err(GatewayError::invalid(
+                "safety_identifier must be at most 64 characters",
+            ));
+        }
         if self.store {
             return Err(GatewayError::invalid(
                 "store=true is not supported; send full input history",
             ));
         }
-        if self.tool_choice.as_deref().is_some_and(|v| v != "auto") {
+        if self
+            .tool_choice
+            .as_deref()
+            .is_some_and(|v| !["auto", "none", "required"].contains(&v))
+        {
             return Err(GatewayError::invalid(
-                "Codex uses tool_choice=auto; other choices are not supported",
+                "tool_choice supports auto, none, and required",
             ));
         }
         if self.include.as_ref().is_some_and(|values| {
@@ -213,41 +238,31 @@ impl CreateResponse {
                 "service_tier is not supported by this Codex model",
             ));
         }
-        let mut instructions = self.instructions.unwrap_or_else(|| {
+        let instructions = self.instructions.unwrap_or_else(|| {
             model
                 .model_messages
                 .as_ref()
                 .and_then(|v| v.instructions_template.clone())
                 .unwrap_or_else(|| codex_models_manager::model_info::BASE_INSTRUCTIONS.to_owned())
         });
+        let namespace = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, session_id.as_bytes());
+        let mut prefix = Vec::new();
         let tools = if lite {
-            let tools = codex_tools::create_tools_json_for_responses_lite(&tool_specs)
-                .map_err(GatewayError::internal)?;
-            let namespace = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, session_id.as_bytes());
-            let mut prefix = vec![ResponseItem::AdditionalTools {
-                id: Some(codex_protocol::ResponseItemId::with_suffix(
-                    "at",
-                    uuid::Uuid::new_v5(
-                        &namespace,
-                        &serde_json::to_vec(&tools).map_err(GatewayError::internal)?,
-                    ),
-                )),
-                role: "developer".into(),
-                tools,
-            }];
-            if !instructions.is_empty() {
-                use codex_context_fragments::ContextualUserFragment;
-                let mut item = ContextualUserFragment::into(
-                    crate::lite_instructions::BaseInstructionsFragment(instructions.clone()),
-                );
-                item.set_id(Some(codex_protocol::ResponseItemId::with_suffix(
-                    "msg",
-                    uuid::Uuid::new_v5(&namespace, instructions.as_bytes()),
-                )));
-                prefix.push(item);
+            if !tool_specs.is_empty() {
+                let tools = codex_tools::create_tools_json_for_responses_lite(&tool_specs)
+                    .map_err(GatewayError::internal)?;
+                prefix.push(ResponseItem::AdditionalTools {
+                    id: Some(codex_protocol::ResponseItemId::with_suffix(
+                        "at",
+                        uuid::Uuid::new_v5(
+                            &namespace,
+                            &serde_json::to_vec(&tools).map_err(GatewayError::internal)?,
+                        ),
+                    )),
+                    role: "developer".into(),
+                    tools,
+                });
             }
-            input.splice(0..0, prefix);
-            instructions.clear();
             None
         } else {
             Some(
@@ -256,16 +271,27 @@ impl CreateResponse {
                     .into(),
             )
         };
+        if !instructions.is_empty() {
+            use codex_context_fragments::ContextualUserFragment;
+            let mut item = ContextualUserFragment::into(
+                crate::lite_instructions::BaseInstructionsFragment(instructions.clone()),
+            );
+            item.set_id(Some(codex_protocol::ResponseItemId::with_suffix(
+                "msg",
+                uuid::Uuid::new_v5(&namespace, instructions.as_bytes()),
+            )));
+            prefix.push(item);
+        }
+        input.splice(0..0, prefix);
         let mut include = self.include.unwrap_or_default();
         if !include.iter().any(|v| v == "reasoning.encrypted_content") {
             include.push("reasoning.encrypted_content".into());
         }
         Ok(ResponsesApiRequest {
             model: model.slug.clone(),
-            instructions,
             input,
             tools,
-            tool_choice: "auto".into(),
+            tool_choice: self.tool_choice.unwrap_or_else(|| "auto".into()),
             parallel_tool_calls: self.parallel_tool_calls.unwrap_or(true) && !lite,
             reasoning: Some(reasoning),
             store: false,
@@ -315,6 +341,12 @@ fn normalize_input(value: Value) -> Result<Vec<ResponseItem>, GatewayError> {
                 } else {
                     "input_text"
                 };
+                // Public Responses clients send system messages, but the Codex
+                // upstream only accepts developer instructions in message input.
+                // Keep their position/content instead of folding them into defaults.
+                if role == "system" {
+                    object.insert("role".into(), json!("developer"));
+                }
                 if let Some(Value::String(text)) = object.get("content") {
                     object.insert("content".into(), json!([{"type":content_type,"text":text}]));
                 }
@@ -336,4 +368,108 @@ fn normalize_input(value: Value) -> Result<Vec<ResponseItem>, GatewayError> {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_choice_is_preserved_for_standard_and_lite_requests() {
+        for lite in [false, true] {
+            let mut model = codex_models_manager::model_info::model_info_from_slug("test-model");
+            model.use_responses_lite = lite;
+            for choice in [Value::Null, json!("auto"), json!("none"), json!("required")] {
+                let request: CreateResponse = serde_json::from_value(json!({
+                    "model": "test-model", "input": "Use the probe tool",
+                    "tool_choice": choice,
+                    "tools": [{"type": "function", "name": "probe", "parameters": {"type": "object", "properties": {}}}]
+                })).unwrap();
+                let converted = request.into_codex(&model, "test-session").unwrap();
+                assert_eq!(converted.tool_choice, choice.as_str().unwrap_or("auto"));
+                if lite {
+                    assert!(converted.tools.is_none());
+                    assert!(matches!(
+                        converted.input.first(),
+                        Some(ResponseItem::AdditionalTools { .. })
+                    ));
+                } else {
+                    assert_eq!(
+                        serde_json::to_value(converted.tools).unwrap()[0]["name"],
+                        "probe"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn unknown_tool_choice_is_rejected() {
+        let request: CreateResponse = serde_json::from_value(json!({
+            "model": "test-model", "input": "Hello", "tool_choice": "invalid"
+        }))
+        .unwrap();
+        let model = codex_models_manager::model_info::model_info_from_slug("test-model");
+        assert!(request.into_codex(&model, "test-session").is_err());
+    }
+
+    fn schema_request() -> Value {
+        json!({
+            "model": "test-model", "input": "Extract memories",
+            "text": {"format": {
+                "type": "json_schema", "name": "activities",
+                "schema": {"type": "object", "properties": {}, "additionalProperties": false},
+                "strict": false
+            }}
+        })
+    }
+
+    #[test]
+    fn json_schema_description_is_accepted_without_changing_codex_output() {
+        let model = codex_models_manager::model_info::model_info_from_slug("test-model");
+        let baseline: CreateResponse = serde_json::from_value(schema_request()).unwrap();
+        let baseline = baseline.into_codex(&model, "test-session").unwrap();
+        for description in [json!("Extract user activities"), Value::Null] {
+            let mut payload = schema_request();
+            payload["text"]["format"]["description"] = description;
+            let request: CreateResponse = serde_json::from_value(payload).unwrap();
+            let converted = request.into_codex(&model, "test-session").unwrap();
+            assert_eq!(converted.text, baseline.text);
+            let format = converted.text.unwrap().format.unwrap();
+            assert_eq!(format.name, "activities");
+            assert!(!format.strict);
+            assert_eq!(format.schema, schema_request()["text"]["format"]["schema"]);
+        }
+    }
+
+    #[test]
+    fn json_schema_still_rejects_unknown_fields_and_invalid_description() {
+        for (field, value) in [("unknown", json!(true)), ("description", json!(123))] {
+            let mut payload = schema_request();
+            payload["text"]["format"][field] = value;
+            assert!(serde_json::from_value::<CreateResponse>(payload).is_err());
+        }
+    }
+
+    #[test]
+    fn json_schema_defaults_to_strict_with_description() {
+        let mut payload = schema_request();
+        payload["text"]["format"]
+            .as_object_mut()
+            .unwrap()
+            .remove("strict");
+        payload["text"]["format"]["description"] = json!("Extract activities");
+        let request: CreateResponse = serde_json::from_value(payload).unwrap();
+        let model = codex_models_manager::model_info::model_info_from_slug("test-model");
+        assert!(
+            request
+                .into_codex(&model, "test-session")
+                .unwrap()
+                .text
+                .unwrap()
+                .format
+                .unwrap()
+                .strict
+        );
+    }
 }

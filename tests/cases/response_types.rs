@@ -30,7 +30,7 @@ async fn actual_openai_sdk_response_types() {
         String::from_utf8_lossy(&output.stderr)
     );
     let received = h.fake.received.lock().unwrap();
-    assert_eq!(received.len(), 22, "invalid fields must not reach upstream");
+    assert_eq!(received.len(), 38, "invalid fields must not reach upstream");
     // Match explicit scenario identities, never pytest collection/execution order.
     for (model, is_lite) in [(&h.model, false), (&lite.slug, true)] {
         let scenario = |name: &str| {
@@ -54,9 +54,9 @@ async fn actual_openai_sdk_response_types() {
                 let row = scenario(&format!("context-{context}-stream-{stream}"));
                 assert_eq!(row.1["reasoning"]["context"], context);
                 let expected_lite = is_lite && context == "all_turns";
-                assert_eq!(
-                    row.1["input"][0]["type"] == "additional_tools",
-                    expected_lite
+                assert!(
+                    row.1["input"][0]["type"] != "additional_tools",
+                    "requests without tools omit additional_tools in Codex 0.162.1"
                 );
                 assert_eq!(
                     row.0.contains_key("x-openai-internal-codex-responses-lite"),
@@ -65,6 +65,14 @@ async fn actual_openai_sdk_response_types() {
             }
         }
         for stream in ["False", "True"] {
+            for limit in ["positive", "null"] {
+                let row = scenario(&format!("max-output-tokens-{limit}-stream-{stream}"));
+                assert!(row.1.get("max_output_tokens").is_none());
+            }
+            for identifier in ["string", "null"] {
+                let row = scenario(&format!("safety-identifier-{identifier}-stream-{stream}"));
+                assert!(row.1.get("safety_identifier").is_none());
+            }
             let row = scenario(&format!("context-None-stream-{stream}"));
             assert_eq!(
                 row.1["reasoning"]["context"],

@@ -75,7 +75,7 @@
 +}
 --- a/src/endpoint/realtime_websocket/methods.rs
 +++ b/src/endpoint/realtime_websocket/methods.rs
-@@ -62,6 +62,8 @@
+@@ -63,6 +63,8 @@
  const OPENAI_REALTIME_API_BASE_URL: &str = "https://api.openai.com/v1";
  const MAX_ACTIVE_TRANSCRIPT_BYTES: usize = 8 * 1024;
  const TRUNCATED_TRANSCRIPT_PREFIX: &str = "…";
@@ -84,7 +84,7 @@
  
  struct WsStream {
      tx_command: mpsc::Sender<WsCommand>,
-@@ -856,6 +858,39 @@
+@@ -857,6 +859,39 @@
          self
      }
  
@@ -124,7 +124,7 @@
      pub async fn connect(
          &self,
          config: RealtimeSessionConfig,
-@@ -1014,17 +1049,83 @@
+@@ -1028,17 +1063,83 @@
          session_initialization: RealtimeSessionInitialization,
          transcript_state: RealtimeTranscriptState,
      ) -> Result<RealtimeWebsocketConnection, ApiError> {
@@ -213,7 +213,7 @@
          request.headers_mut().extend(headers);
  
          info!("connecting realtime websocket: {ws_url}");
-@@ -1052,52 +1153,30 @@
+@@ -1066,52 +1167,30 @@
          let (stream, response) = connector
              .connect(request, websocket_config())
              .await
@@ -319,8 +319,8 @@
          body: EncodedJsonBody,
 --- a/src/endpoint/responses_websocket.rs
 +++ b/src/endpoint/responses_websocket.rs
-@@ -418,6 +418,50 @@
-         ))
+@@ -407,6 +407,52 @@
+         .await
      }
  
 +    /// Gateway extension: expose the original handshake without the lossy event adapter.
@@ -364,14 +364,16 @@
 +        let mut headers =
 +            merge_request_headers(&self.provider.headers, extra_headers, default_headers);
 +        self.auth.add_auth_headers(&mut headers);
-+        connect_websocket_raw(url, headers, http_client_factory).await
++        let connector = WebSocketConnector::new(http_client_factory)
++            .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?;
++        connect_websocket_raw(url, headers, &connector).await
 +    }
 +
      /// Opens a WebSocket connection long enough to validate the upgrade response.
      ///
      /// The probe uses the same URL construction, headers, authentication, TLS,
-@@ -501,28 +545,7 @@
-     http_client_factory: &HttpClientFactory,
+@@ -492,26 +538,7 @@
+     connector: &WebSocketConnector,
      turn_state: Option<Arc<OnceLock<String>>>,
  ) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
 -    info!("connecting to websocket: {url}");
@@ -382,8 +384,6 @@
 -        .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
 -    request.headers_mut().extend(headers);
 -
--    let connector = WebSocketConnector::new(http_client_factory)
--        .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?;
 -    let response = connector.connect(request, websocket_config()).await;
 -
 -    let (stream, response) = match response {
@@ -396,11 +396,11 @@
 -            return Err(map_ws_error(err, &url));
 -        }
 -    };
-+    let (stream, response) = connect_websocket_raw(url, headers, http_client_factory).await?;
++    let (stream, response) = connect_websocket_raw(url, headers, connector).await?;
  
      let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
      let server_model = response
-@@ -544,6 +567,37 @@
+@@ -533,6 +560,35 @@
          reasoning_included,
          server_model,
      ))
@@ -409,7 +409,7 @@
 +async fn connect_websocket_raw(
 +    url: Url,
 +    headers: HeaderMap,
-+    http_client_factory: &HttpClientFactory,
++    connector: &WebSocketConnector,
 +) -> Result<(WebSocketConnection, http::Response<Option<Vec<u8>>>), ApiError> {
 +    info!("connecting to websocket: {url}");
 +
@@ -419,8 +419,6 @@
 +        .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
 +    request.headers_mut().extend(headers);
 +
-+    let connector = WebSocketConnector::new(http_client_factory)
-+        .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?;
 +    let response = connector.connect(request, websocket_config()).await;
 +
 +    let (stream, response) = match response {

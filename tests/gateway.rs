@@ -312,6 +312,7 @@ impl Harness {
                 .unwrap()
         });
         let app = router(Gateway {
+            telemetry: None,
             backend,
             models,
             key: Some("client-key".into()),
@@ -395,10 +396,75 @@ async fn stream_preserves_full_events_and_uses_codex_request_and_headers() {
     assert_eq!(body["tool_choice"], "auto");
     assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
     assert_eq!(
-        body["input"],
+        json!(&body["input"].as_array().unwrap()[1..]),
         json!([{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}])
     );
-    assert!(!body["instructions"].as_str().unwrap().is_empty());
+    assert!(body.get("instructions").is_none());
+    assert_eq!(body["input"][0]["role"], "developer");
+    assert!(
+        !body["input"][0]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn system_messages_are_normalized_for_codex_upstream() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for stream in [false, true] {
+        let response = h
+            .request(json!({
+                "instructions": "Keep explicit instructions.",
+                "input": [
+                    {"role": "system", "content": "Return structured output."},
+                    {"role": "developer", "content": "Keep developer content."},
+                    {"role": "user", "content": "First question."},
+                    {"role": "assistant", "content": "First answer."},
+                    {"type": "message", "role": "system", "content": [
+                        {"type": "input_text", "text": "Keep this later instruction in order."}
+                    ]},
+                    {"role": "user", "content": "Next question."}
+                ],
+                "stream": stream
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        response.bytes().await.unwrap();
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 2);
+    for (_, body) in received.iter() {
+        assert!(body.get("instructions").is_none());
+        assert_eq!(
+            body["input"][0]["content"][0]["text"],
+            "Keep explicit instructions."
+        );
+        let input = &body["input"].as_array().unwrap()[1..];
+        assert_eq!(input.len(), 6);
+        assert_eq!(
+            input
+                .iter()
+                .map(|item| item["role"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "developer",
+                "developer",
+                "user",
+                "assistant",
+                "developer",
+                "user"
+            ]
+        );
+        assert_eq!(input[0]["content"][0]["text"], "Return structured output.");
+        assert_eq!(input[3]["content"][0]["type"], "output_text");
+        assert_eq!(
+            input[4]["content"][0]["text"],
+            "Keep this later instruction in order."
+        );
+    }
 }
 
 #[tokio::test]
@@ -434,8 +500,145 @@ async fn function_arguments_stream_and_tool_results_are_not_executed_or_lost() {
     assert_eq!(parse_sse(&response.text().await.unwrap()), expected);
     let received = h.fake.received.lock().unwrap();
     assert_eq!(received.len(), 1);
-    assert_eq!(received[0].1["input"][2]["call_id"], "call_1");
-    assert_eq!(received[0].1["input"][2]["output"], "sunny");
+    assert_eq!(received[0].1["input"][3]["call_id"], "call_1");
+    assert_eq!(received[0].1["input"][3]["output"], "sunny");
+}
+
+#[tokio::test]
+async fn magpie_output_token_hint_preserves_responses_and_tool_calls() {
+    let call = json!({"type":"function_call","id":"fc_1","call_id":"call_1","name":"read_file","arguments":"{}","status":"completed"});
+    let expected = vec![events()[0].clone(), completed(vec![call.clone()])];
+    let h = Harness::new(
+        expected.clone(),
+        StatusCode::OK,
+        false,
+        Duration::from_secs(10),
+    )
+    .await;
+    for stream in [false, true] {
+        for limit in [Value::Null, json!(1), json!(4096), json!(u64::MAX)] {
+            let response = h.request(json!({
+                "input": "Read the file", "stream": stream, "store": false,
+                "max_output_tokens": limit,
+                "tools": [{"type":"function","name":"read_file","parameters":{"type":"object","properties":{}}}]
+            })).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            if stream {
+                assert_eq!(parse_sse(&response.text().await.unwrap()), expected);
+            } else {
+                assert_eq!(response.json::<Value>().await.unwrap()["output"][0], call);
+            }
+        }
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 8);
+    for (_, request) in received.iter() {
+        assert!(request.get("max_output_tokens").is_none());
+        assert_eq!(request["tools"][0]["name"], "read_file");
+    }
+}
+
+#[tokio::test]
+async fn invalid_output_token_hints_do_not_contact_upstream() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for limit in [
+        json!(0),
+        json!(-1),
+        json!(1.5),
+        json!("32"),
+        json!(true),
+        json!({}),
+    ] {
+        let response = h
+            .request(json!({"input":"hi","max_output_tokens":limit}))
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error());
+    }
+    assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn accepts_safety_identifier_without_forwarding_it() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for stream in [false, true] {
+        for identifier in [
+            Value::Null,
+            json!("user-compatibility"),
+            json!("a".repeat(64)),
+        ] {
+            let response = h
+                .request(json!({
+                    "input": "hi",
+                    "stream": stream,
+                    "safety_identifier": identifier,
+                    "prompt_cache_key": "independent-cache",
+                }))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            if stream {
+                let events = parse_sse(&response.text().await.unwrap());
+                assert_eq!(events.last().unwrap()["type"], "response.completed");
+            } else {
+                assert_eq!(
+                    response.json::<Value>().await.unwrap()["status"],
+                    "completed"
+                );
+            }
+        }
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 6);
+    for (_, request) in received.iter() {
+        assert!(request.get("safety_identifier").is_none());
+        assert_eq!(request["prompt_cache_key"], "independent-cache");
+    }
+}
+
+#[tokio::test]
+async fn rejects_invalid_safety_identifier_before_contacting_upstream() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for identifier in [
+        json!(42),
+        json!(true),
+        json!({}),
+        json!([]),
+        json!("a".repeat(65)),
+    ] {
+        let response = h
+            .request(json!({"input": "hi", "safety_identifier": identifier}))
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_client_error());
+        assert!(response.json::<Value>().await.unwrap()["error"].is_object());
+    }
+    assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn public_tool_choice_is_forwarded_without_downgrading_required() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    for choice in ["auto", "none", "required"] {
+        let response = h
+            .request(json!({
+                "input": "Use the probe tool", "tool_choice": choice,
+                "tools": [{"type": "function", "name": "probe", "parameters": {"type": "object", "properties": {}}}]
+            }))
+            .send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.json::<Value>().await.unwrap()["status"],
+            "completed"
+        );
+        let received = h.fake.received.lock().unwrap();
+        let request = &received.last().unwrap().1;
+        assert_eq!(request["tool_choice"], choice);
+        assert_eq!(request["tools"][0]["name"], "probe");
+    }
 }
 
 #[tokio::test]
@@ -445,7 +648,7 @@ async fn rejects_unsupported_features_before_contacting_upstream() {
         json!({"input":"hi","store":true}),
         json!({"input":"hi","previous_response_id":"resp_1"}),
         json!({"input":"hi","temperature":0.5}),
-        json!({"input":"hi","tool_choice":"none"}),
+        json!({"input":"hi","tool_choice":"invalid"}),
         json!({"input":[{"type":"unknown"}]}),
     ] {
         let response = h.request(body).send().await.unwrap();
@@ -620,7 +823,7 @@ async fn subscription_uses_codex_account_auth_and_zstd_without_reading_real_cred
     assert_eq!(received[0].0["chatgpt-account-id"], "account_id");
     assert_eq!(received[0].0["content-encoding"], "zstd");
     assert_eq!(
-        received[0].1["input"][0]["content"][0]["text"],
+        received[0].1["input"][1]["content"][0]["text"],
         "subscription request"
     );
 }
@@ -1257,6 +1460,7 @@ supports_websockets = {}
         let output = tokio::time::timeout(
             Duration::from_secs(60),
             tokio::process::Command::new(&binary)
+                .stdin(std::process::Stdio::null())
                 .env("CODEX_HOME", home.path())
                 .env("CODEX_GATEWAY_API_KEY", "client-key")
                 .env_remove("OPENAI_API_KEY")
@@ -1329,7 +1533,16 @@ async fn public_ws_accepts_sdk_input_and_builds_lite_request() {
     }
     let received = h.fake.received.lock().unwrap();
     let body = &received[0].1;
-    assert_eq!(body["input"][0]["type"], "additional_tools");
+    assert_eq!(body["input"][0]["type"], "message");
+    assert_eq!(body["input"][0]["role"], "developer");
+    assert_eq!(body["input"][0]["content"][0]["text"], "brief");
+    assert!(
+        body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["type"] != "additional_tools")
+    );
     assert_eq!(body["reasoning"]["context"], "all_turns");
     assert_eq!(body["generate"], false);
     assert_eq!(body["stream_id"], "lane-1");
@@ -1343,7 +1556,7 @@ async fn public_ws_accepts_sdk_input_and_builds_lite_request() {
 async fn native_model_catalog_is_fetched_through_original_models_client() {
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
     let client = reqwest::Client::new();
-    for path in ["codex", "backend-api/codex"] {
+    for path in ["codex", "backend-api/codex", "v1"] {
         let response = client
             .get(format!("{}/{path}/models?client_version=0.159.0", h.url))
             .bearer_auth("client-key")
@@ -1374,3 +1587,112 @@ mod realtime_cases;
 
 #[path = "cases/response_types.rs"]
 mod response_type_cases;
+
+#[tokio::test]
+async fn public_http_preserves_prepared_codex_requests() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
+    let body = json!({"model":"future-model", "stream":true, "store":false,
+        "instructions":"unchanged", "input":[], "tools":null,
+        "client_metadata":{"trace":"keep"}, "future_field":{"keep":true}});
+    let raw = serde_json::to_vec(&body).unwrap();
+    for compressed in [false, true] {
+        let response = reqwest::Client::new()
+            .post(format!("{}/v1/responses", h.url))
+            .bearer_auth("client-key")
+            .header("content-type", "application/json")
+            .header(
+                "content-encoding",
+                if compressed { "zstd" } else { "identity" },
+            )
+            .body(if compressed {
+                zstd::encode_all(raw.as_slice(), 3).unwrap()
+            } else {
+                raw.clone()
+            })
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            response
+                .text()
+                .await
+                .unwrap()
+                .contains("response.completed")
+        );
+    }
+    let received = h.fake.received.lock().unwrap();
+    assert_eq!(received.len(), 2);
+    for (_, forwarded) in received.iter() {
+        assert_eq!(forwarded, &body);
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires an installed Codex CLI; set CODEX_COMPAT_CLI_BIN"]
+async fn installed_codex_cli_can_use_v1_http_and_websocket() {
+    let binary = std::env::var("CODEX_COMPAT_CLI_BIN").expect("set CODEX_COMPAT_CLI_BIN");
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(20)).await;
+    let directory = tempfile::tempdir().unwrap();
+    for ws in [false, true] {
+        let home = support::cli::home();
+        let config = format!(
+            r#"model = "gpt-5.5"
+model_provider = "gateway"
+model_reasoning_effort = "low"
+[model_providers.gateway]
+name = "Gateway"
+base_url = "{}/v1"
+wire_api = "responses"
+env_key = "CODEX_GATEWAY_API_KEY"
+requires_openai_auth = false
+supports_websockets = {}
+"#,
+            h.url, ws
+        );
+        std::fs::write(home.path().join("config.toml"), config).unwrap();
+        let output = tokio::time::timeout(
+            Duration::from_secs(60),
+            tokio::process::Command::new(&binary)
+                .stdin(std::process::Stdio::null())
+                .env("CODEX_HOME", home.path())
+                .env("CODEX_GATEWAY_API_KEY", "client-key")
+                .env_remove("OPENAI_API_KEY")
+                .env_remove("OPENAI_BASE_URL")
+                .current_dir(directory.path())
+                .args([
+                    "exec",
+                    "--ephemeral",
+                    "--skip-git-repo-check",
+                    "--sandbox",
+                    "read-only",
+                    "--json",
+                    "Reply briefly. Do not use tools.",
+                ])
+                .stdin(std::process::Stdio::null())
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .expect("CLI timeout")
+        .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "CLI failed (ws={ws}): {stdout} {stderr}"
+        );
+        assert!(stdout.contains("你好"), "missing model reply: {stdout}");
+        assert!(
+            !stderr.contains("failed to decode models response"),
+            "{stderr}"
+        );
+    }
+    assert!(!h.fake.http_bodies.lock().unwrap().is_empty());
+    assert!(
+        h.fake
+            .ws_connections
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+    );
+}

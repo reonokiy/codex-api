@@ -36,6 +36,26 @@ def test_create(client, model, request_kwargs):
     completed(client.responses.create(**request_kwargs(model)))
 
 
+@pytest.mark.parametrize('limit', [
+    pytest.param(None, id='null'),
+    pytest.param(1, id='minimum'),
+    pytest.param(32, id='positive'),
+    pytest.param(2**64 - 1, id='u64-max'),
+])
+@pytest.mark.parametrize('stream', [False, True])
+def test_max_output_tokens_hint(client, model, request_kwargs, limit, stream):
+    # This compatibility hint must not truncate the fixture's completed response.
+    response = client.responses.create(**request_kwargs(
+        model, max_output_tokens=limit, stream=stream))
+    if stream:
+        with response:
+            events = list(response)
+        assert ''.join(e.delta for e in events if e.type == 'response.output_text.delta') == '你好'
+        completed(events[-1].response)
+    else:
+        completed(response)
+
+
 def input_cases(config):
     return {
         'message_string': [{'role': 'user', 'content': 'Hello'}],
@@ -79,6 +99,14 @@ def test_request_controls(client, model, request_kwargs):
     completed(client.responses.create(**request_kwargs(model, instructions='Be brief', store=False,
         tool_choice='auto', parallel_tool_calls=False, prompt_cache_key='sdk-fixture',
         service_tier='auto', include=['reasoning.encrypted_content'])))
+
+
+@pytest.mark.parametrize('choice', ['auto', 'none', 'required'])
+def test_tool_choice(client, model, request_kwargs, choice):
+    completed(client.responses.create(**request_kwargs(model,
+        tool_choice=choice,
+        tools=[{'type': 'function', 'name': 'probe',
+                'parameters': {'type': 'object', 'properties': {}}}])))
 
 
 def test_raw_response(client, model, request_kwargs):
@@ -174,10 +202,10 @@ def test_images_edit(client, config):
 
 @pytest.mark.parametrize('params', [
     pytest.param({'store': True}, id='store'),
-    pytest.param({'max_output_tokens': 32}, id='max-output-tokens'),
+    pytest.param({'max_output_tokens': 0}, id='max-output-tokens-zero'),
     pytest.param({'previous_response_id': 'resp_1'}, id='previous-response-id'),
     pytest.param({'background': True}, id='background'),
-    pytest.param({'tool_choice': 'required'}, id='tool-choice'),
+    pytest.param({'tool_choice': 'invalid'}, id='tool-choice'),
     pytest.param({'text': {'format': {'type': 'json_object'}}}, id='json-object'),
 ])
 def test_unsupported_values(client, request_kwargs, params):

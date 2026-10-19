@@ -53,6 +53,7 @@ impl LiveGateway {
         let model_catalog = Some(models.clone());
         let observed = transports.clone();
         let app = router(Gateway {
+            telemetry: None,
             backend,
             models,
             key: Some(key.clone()),

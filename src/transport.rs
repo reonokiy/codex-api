@@ -88,6 +88,8 @@ pub struct StandaloneTransport {
 /// Request body preparation, HTTP, TLS and proxy routing still use the original client.
 pub struct ProxyTransport {
     pub http: codex_http_client::HttpClient,
+    pub audio_headers: Option<http::HeaderMap>,
+    pub configured_chatgpt_cookies_present: bool,
     pub failed: std::sync::Arc<std::sync::Mutex<Option<Response>>>,
 }
 impl HttpTransport for ProxyTransport {
@@ -98,6 +100,33 @@ impl HttpTransport for ProxyTransport {
         let prepared = request
             .prepare_body_for_send()
             .map_err(TransportError::Build)?;
+        if let Some(default_headers) = &self.audio_headers {
+            let headers = &prepared.headers;
+            tracing::debug!(
+                user_agent = headers
+                    .get("user-agent")
+                    .or_else(|| default_headers.get("user-agent"))
+                    .and_then(|v| v.to_str().ok()),
+                originator = headers
+                    .get("originator")
+                    .or_else(|| default_headers.get("originator"))
+                    .and_then(|v| v.to_str().ok()),
+                accept = headers
+                    .get("accept")
+                    .or_else(|| default_headers.get("accept"))
+                    .map(|v| v.to_str().unwrap_or("<non-UTF8>"))
+                    .unwrap_or("*/*"),
+                content_type = headers
+                    .get("content-type")
+                    .or_else(|| default_headers.get("content-type"))
+                    .and_then(|v| v.to_str().ok()),
+                request_bytes = prepared.body.as_ref().map_or(0, Bytes::len),
+                explicit_cookie_header_present = prepared.headers.contains_key("cookie"),
+                shared_cookie_jar_enabled = true,
+                configured_chatgpt_cookies_present = self.configured_chatgpt_cookies_present,
+                "audio upstream wire request"
+            );
+        }
         let mut outgoing = self
             .http
             .request(request.method, &request.url)
@@ -112,6 +141,17 @@ impl HttpTransport for ProxyTransport {
             .send()
             .await
             .map_err(|e| TransportError::Network(e.without_url().to_string()))?;
+        if self.audio_headers.is_some() {
+            let headers = response.headers();
+            tracing::debug!(
+                http_version = ?response.version(),
+                server = headers.get("server").and_then(|v| v.to_str().ok()),
+                cf_mitigated = headers.get("cf-mitigated").and_then(|v| v.to_str().ok()),
+                request_id = headers.get("x-oai-request-id").or_else(|| headers.get("x-request-id")).and_then(|v| v.to_str().ok()),
+                cf_ray = headers.get("cf-ray").and_then(|v| v.to_str().ok()),
+                "audio upstream wire response"
+            );
+        }
         let response = StreamResponse {
             status: response.status(),
             headers: response.headers().clone(),
