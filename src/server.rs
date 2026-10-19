@@ -165,7 +165,6 @@ async fn compatible_create(
     if compressed || native {
         return native_create(State(gateway), parts.headers, bytes).await;
     }
-    let bytes = decode_responses_body(&parts.headers, bytes).await?;
     let headers = parts.headers.clone();
     let input = Json::<CreateResponse>::from_request(
         axum::extract::Request::from_parts(parts, Body::from(bytes)),
@@ -286,31 +285,11 @@ async fn native_create(
     body: Bytes,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
-    let body = decode_responses_body(&headers, body).await?;
-    let raw: Box<serde_json::value::RawValue> =
-        serde_json::from_slice(&body).map_err(|e| GatewayError::invalid(e.to_string()))?;
-    let body: Value =
-        serde_json::from_str(raw.get()).map_err(|e| GatewayError::invalid(e.to_string()))?;
-    if !body.is_object() || body["stream"] != true || !body["model"].is_string() {
-        return Err(GatewayError::invalid(
-            "native endpoint requires an object with model and stream: true",
-        ));
-    }
-    let forwarded = forward_request_headers(&headers);
-    let usage = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers).start(
-        body["model"].as_str().unwrap_or("unknown"),
-        "responses",
-        "http",
-    );
-    respond(gateway, None, Some((raw, forwarded)), true, false, usage).await
-}
-
-async fn decode_responses_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes, GatewayError> {
-    match headers
+    let body = match headers
         .get("content-encoding")
         .and_then(|v| v.to_str().ok())
     {
-        None | Some("identity") => Ok(body),
+        None | Some("identity") => body.to_vec(),
         Some("zstd") => tokio::task::spawn_blocking(move || {
             use std::io::Read;
             let decoder = zstd::stream::read::Decoder::new(body.as_ref())
@@ -328,17 +307,35 @@ async fn decode_responses_body(headers: &HeaderMap, body: Bytes) -> Result<Bytes
                     message: "decoded body exceeds 64 MiB".into(),
                 });
             }
-            Ok(Bytes::from(decoded))
+            Ok(decoded)
         })
         .await
-        .map_err(GatewayError::internal)?,
-        _ => Err(GatewayError {
-            upstream_response: None,
-            status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            code: "invalid_request_error",
-            message: "supported content encodings: identity, zstd".into(),
-        }),
+        .map_err(GatewayError::internal)??,
+        _ => {
+            return Err(GatewayError {
+                upstream_response: None,
+                status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                code: "invalid_request_error",
+                message: "supported content encodings: identity, zstd".into(),
+            });
+        }
+    };
+    let raw: Box<serde_json::value::RawValue> =
+        serde_json::from_slice(&body).map_err(|e| GatewayError::invalid(e.to_string()))?;
+    let body: Value =
+        serde_json::from_str(raw.get()).map_err(|e| GatewayError::invalid(e.to_string()))?;
+    if !body.is_object() || body["stream"] != true || !body["model"].is_string() {
+        return Err(GatewayError::invalid(
+            "native endpoint requires an object with model and stream: true",
+        ));
     }
+    let forwarded = forward_request_headers(&headers);
+    let usage = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers).start(
+        body["model"].as_str().unwrap_or("unknown"),
+        "responses",
+        "http",
+    );
+    respond(gateway, None, Some((raw, forwarded)), true, false, usage).await
 }
 
 pub(crate) fn forward_request_headers(headers: &HeaderMap) -> HeaderMap {
@@ -549,11 +546,6 @@ async fn compact(
     let telemetry = crate::telemetry::RequestTelemetry::new(gateway.telemetry.clone(), &headers);
     let headers = crate::headers::request_headers(&headers);
     let Json(input) = body.map_err(|e| GatewayError::invalid(e.body_text()))?;
-    if input.client_metadata.is_some() {
-        return Err(GatewayError::invalid(
-            "client_metadata is not supported for compact",
-        ));
-    }
     let model = gateway
         .models
         .iter()

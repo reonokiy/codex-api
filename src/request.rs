@@ -32,18 +32,6 @@ pub struct CreateResponse {
     /// Compatibility hint only: the Codex upstream has no output-token limit.
     pub max_output_tokens: Option<u64>,
     pub include: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "deserialize_client_metadata")]
-    pub client_metadata: Option<HashMap<String, String>>,
-}
-
-// Compact rejects this field even when empty; null must not act like omission.
-fn deserialize_client_metadata<'de, D>(
-    deserializer: D,
-) -> Result<Option<HashMap<String, String>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    HashMap::deserialize(deserializer).map(Some)
 }
 
 #[derive(Debug, Deserialize)]
@@ -304,7 +292,7 @@ impl CreateResponse {
                     .unwrap_or_else(|| session_id.to_owned()),
             ),
             text,
-            client_metadata: Some(self.client_metadata.unwrap_or_default()),
+            client_metadata: Some(HashMap::new()),
             access_programs: None,
         })
     }

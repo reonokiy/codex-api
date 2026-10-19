@@ -2,8 +2,6 @@
 mod file_cases;
 #[path = "cases/native.rs"]
 mod native_cases;
-#[path = "cases/responses_limits.rs"]
-mod responses_limit_cases;
 mod support;
 use axum::{
     Router,
@@ -225,8 +223,8 @@ impl Harness {
             .route(
                 "/responses",
                 post(upstream)
-                    .get(upstream_ws)
-                    .layer(axum::extract::DefaultBodyLimit::max(65 * 1024 * 1024)),
+                    .layer(axum::extract::DefaultBodyLimit::max(65 * 1024 * 1024))
+                    .get(upstream_ws),
             )
             .route("/realtime/calls", post(realtime_cases::upstream_call))
             .route("/realtime", axum::routing::get(upstream_ws))
@@ -906,6 +904,14 @@ async fn native_rejects_unauthorized_and_nonstream_and_decompression_bombs() {
             .status(),
         StatusCode::PAYLOAD_TOO_LARGE
     );
+    let oversized = client
+        .post(&url)
+        .bearer_auth("client-key")
+        .body(vec![b' '; 64 * 1024 * 1024 + 1])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
     assert!(h.fake.received.lock().unwrap().is_empty());
 }
 
@@ -1590,14 +1596,17 @@ mod response_type_cases;
 
 #[tokio::test]
 async fn public_http_preserves_prepared_codex_requests() {
-    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(30)).await;
+    let image = format!("data:image/png;base64,{}", "A".repeat(17 * 1024 * 1024));
     let body = json!({"model":"future-model", "stream":true, "store":false,
-        "instructions":"unchanged", "input":[], "tools":null,
+        "instructions":"unchanged", "tools":null,
+        "input":[{"role":"user","content":[{"type":"input_image","image_url":image}]}],
         "client_metadata":{"trace":"keep"}, "future_field":{"keep":true}});
-    let raw = serde_json::to_vec(&body).unwrap();
-    for compressed in [false, true] {
+    let mut raw = serde_json::to_vec(&body).unwrap();
+    raw.resize(64 * 1024 * 1024, b' ');
+    for (path, compressed) in [("v1", false), ("codex", true), ("backend-api/codex", false)] {
         let response = reqwest::Client::new()
-            .post(format!("{}/v1/responses", h.url))
+            .post(format!("{}/{path}/responses", h.url))
             .bearer_auth("client-key")
             .header("content-type", "application/json")
             .header(
@@ -1622,9 +1631,9 @@ async fn public_http_preserves_prepared_codex_requests() {
         );
     }
     let received = h.fake.received.lock().unwrap();
-    assert_eq!(received.len(), 2);
+    assert_eq!(received.len(), 3);
     for (_, forwarded) in received.iter() {
-        assert_eq!(forwarded, &body);
+        assert!(forwarded == &body);
     }
 }
 
