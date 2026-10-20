@@ -203,6 +203,26 @@ impl Harness {
         login: CodexAuth,
         transfers: bool,
     ) -> Self {
+        Self::with_request_limit(
+            events,
+            status,
+            hang,
+            timeout,
+            login,
+            transfers,
+            16 * 1024 * 1024,
+        )
+        .await
+    }
+    async fn with_request_limit(
+        events: Vec<Value>,
+        status: StatusCode,
+        hang: bool,
+        timeout: Duration,
+        login: CodexAuth,
+        transfers: bool,
+        max_request_bytes: usize,
+    ) -> Self {
         let subscription = login.is_chatgpt_auth();
         let fake = Fake {
             received: Default::default(),
@@ -268,6 +288,7 @@ impl Harness {
                 }),
             )
             .fallback(native_cases::upstream_native)
+            .layer(axum::extract::DefaultBodyLimit::max(max_request_bytes))
             .with_state(fake.clone());
         let upstream_task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -305,6 +326,7 @@ impl Harness {
                 .unwrap()
         });
         let app = router(Gateway {
+            max_request_bytes,
             telemetry: None,
             backend,
             models,
@@ -1688,4 +1710,123 @@ supports_websockets = {}
             .load(std::sync::atomic::Ordering::SeqCst)
             > 0
     );
+}
+
+#[tokio::test]
+async fn configured_request_limit_applies_to_http_and_decoded_zstd() {
+    let h = Harness::with_request_limit(
+        events(),
+        StatusCode::OK,
+        false,
+        Duration::from_secs(5),
+        CodexAuth::from_api_key("upstream-secret"),
+        false,
+        1024,
+    )
+    .await;
+    let client = reqwest::Client::new();
+    for path in ["/v1/responses", "/codex/responses"] {
+        let response = client
+            .post(format!("{}{path}", h.url))
+            .bearer_auth("client-key")
+            .body(vec![b' '; 1025])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    for length in [1024, 1025] {
+        let compressed = zstd::encode_all(vec![b' '; length].as_slice(), 1).unwrap();
+        let response = client
+            .post(format!("{}/codex/responses", h.url))
+            .bearer_auth("client-key")
+            .header("content-encoding", "zstd")
+            .body(compressed)
+            .send()
+            .await
+            .unwrap();
+        // At the limit the body reaches JSON validation; one byte over is rejected first.
+        assert_eq!(
+            response.status(),
+            if length == 1024 {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::PAYLOAD_TOO_LARGE
+            }
+        );
+    }
+    assert!(h.fake.received.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn real_http_64_mib_body_boundaries_and_large_header() {
+    let limit = 64 * 1024 * 1024;
+    let h = Harness::with_request_limit(
+        events(),
+        StatusCode::OK,
+        false,
+        Duration::from_secs(30),
+        CodexAuth::from_api_key("upstream-secret"),
+        false,
+        limit,
+    )
+    .await;
+    let client = reqwest::Client::new();
+    for path in [
+        "/v1/responses",
+        "/codex/responses",
+        "/backend-api/codex/responses",
+    ] {
+        for size in [16 * 1024 * 1024 + 1, limit, limit + 1] {
+            let mut body = serde_json::to_vec(
+                &json!({"model":h.model,"input":[{"role":"user","content":"hello"}],"stream":true}),
+            )
+            .unwrap();
+            body.resize(size, b' ');
+            let response = client
+                .post(format!("{}{path}", h.url))
+                .bearer_auth("client-key")
+                .header("content-type", "application/json")
+                .body(body)
+                .send()
+                .await
+                .unwrap();
+            let status = response.status();
+            let text = response.text().await.unwrap();
+            println!("POST {path}: body={size} status={status}");
+            assert_eq!(
+                status,
+                if size > limit {
+                    StatusCode::PAYLOAD_TOO_LARGE
+                } else {
+                    StatusCode::OK
+                },
+                "{text}"
+            );
+            if size <= limit {
+                assert!(text.contains("你好"), "{text}");
+            }
+        }
+    }
+    for size in [8 * 1024, 64 * 1024, 1024 * 1024] {
+        let response = h
+            .request(json!({"input":"hello","stream":false}))
+            .header("x-test-padding", "a".repeat(size))
+            .send()
+            .await
+            .unwrap();
+        println!(
+            "POST /v1/responses: header-value={size} status={}",
+            response.status()
+        );
+        assert_eq!(
+            response.status(),
+            if size <= 64 * 1024 {
+                StatusCode::OK
+            } else {
+                StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
+            }
+        );
+    }
+    assert_eq!(h.fake.received.lock().unwrap().len(), 8);
 }

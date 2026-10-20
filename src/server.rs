@@ -19,6 +19,7 @@ pub struct Gateway {
     pub key: Option<String>,
     pub concurrency: Arc<Semaphore>,
     pub timeout: Duration,
+    pub max_request_bytes: usize,
     pub transfers: Option<crate::transfers::Transfers>,
     pub telemetry: Option<Arc<crate::telemetry::Telemetry>>,
 }
@@ -71,7 +72,7 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/v1/live/sessions/{session_id}/attach", get(crate::realtime::upgrade))
         .route("/transfers/{handle}", axum::routing::any(transfer))
         .fallback(crate::native::handle)
-        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        .layer(DefaultBodyLimit::max(gateway.max_request_bytes))
         .with_state(Arc::new(gateway))
 }
 async fn transfer(
@@ -274,6 +275,7 @@ async fn native_create(
     body: Bytes,
 ) -> Result<Response, GatewayError> {
     authorize(&gateway, &headers)?;
+    let max_request_bytes = gateway.max_request_bytes;
     let body = match headers
         .get("content-encoding")
         .and_then(|v| v.to_str().ok())
@@ -285,15 +287,15 @@ async fn native_create(
                 .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
             let mut decoded = Vec::new();
             decoder
-                .take(16 * 1024 * 1024 + 1)
+                .take(max_request_bytes as u64 + 1)
                 .read_to_end(&mut decoded)
                 .map_err(|_| GatewayError::invalid("invalid zstd request"))?;
-            if decoded.len() > 16 * 1024 * 1024 {
+            if decoded.len() > max_request_bytes {
                 return Err(GatewayError {
                     upstream_response: None,
                     status: StatusCode::PAYLOAD_TOO_LARGE,
                     code: "invalid_request_error",
-                    message: "decoded body exceeds 16 MiB".into(),
+                    message: format!("decoded body exceeds {max_request_bytes} bytes"),
                 });
             }
             Ok(decoded)

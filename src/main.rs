@@ -20,7 +20,18 @@ struct Args {
     max_concurrency: u16,
     #[arg(long, default_value_t=300, value_parser=clap::value_parser!(u64).range(1..))]
     timeout_seconds: u64,
+    /// Maximum HTTP body, decoded zstd body, and WebSocket message/frame size in bytes.
+    #[arg(long, env = "CODEX_GATEWAY_MAX_REQUEST_BYTES", default_value_t = 64 * 1024 * 1024, value_parser = parse_request_bytes)]
+    max_request_bytes: usize,
 }
+fn parse_request_bytes(value: &str) -> Result<usize, String> {
+    let bytes = value.parse::<usize>().map_err(|e| e.to_string())?;
+    if bytes == 0 || bytes > isize::MAX as usize {
+        return Err("must be between 1 and isize::MAX bytes".into());
+    }
+    Ok(bytes)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -68,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
             args.max_concurrency,
         ))),
         timeout,
+        max_request_bytes: args.max_request_bytes,
         transfers,
     };
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
@@ -89,4 +101,34 @@ async fn main() -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || telemetry.shutdown()).await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_limit_defaults_to_64_mib() {
+        use clap::CommandFactory;
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "max_request_bytes")
+            .unwrap();
+        assert_eq!(
+            argument.get_default_values(),
+            &[std::ffi::OsString::from("67108864")]
+        );
+    }
+
+    #[test]
+    fn request_limit_cli_validation() {
+        for value in ["1", "16777216", "67108864"] {
+            let args = Args::try_parse_from(["gateway", "--max-request-bytes", value]).unwrap();
+            assert_eq!(args.max_request_bytes, value.parse::<usize>().unwrap());
+        }
+        for value in ["0", "-1", "invalid", "18446744073709551615"] {
+            assert!(Args::try_parse_from(["gateway", "--max-request-bytes", value]).is_err());
+        }
+    }
 }

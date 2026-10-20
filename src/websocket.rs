@@ -53,8 +53,8 @@ pub async fn upgrade(
         .map(str::to_owned)
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let mut response = ws
-        .max_message_size(16 * 1024 * 1024)
-        .max_frame_size(16 * 1024 * 1024)
+        .max_message_size(gateway.max_request_bytes)
+        .max_frame_size(gateway.max_request_bytes)
         .on_upgrade(move |client| async move {
             let _permit = permit;
             relay_with_telemetry(

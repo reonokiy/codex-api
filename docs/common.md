@@ -9,12 +9,19 @@ Use `Content-Type: application/json` unless an endpoint documents multipart or W
 
 | Limit | Default |
 | --- | --- |
-| Request body / WebSocket message | 16 MiB |
-| Decoded native zstd request | 16 MiB |
+| Request body / WebSocket message and frame | 64 MiB; `--max-request-bytes` |
+| Decoded native zstd request | Same as `--max-request-bytes` |
 | Buffered tool response / HTTP Responses event stream | 64 MiB |
 | Upstream model catalog | 16 MiB |
 | Concurrent generation/native requests or WebSocket connections | 4; `--max-concurrency` |
 | Request deadline / streaming idle timeout | 300 seconds; `--timeout-seconds` |
+
+Set `CODEX_GATEWAY_MAX_REQUEST_BYTES` or `--max-request-bytes` to a positive
+byte count (the CLI flag takes precedence). For example, `67108864` allows
+64 MiB HTTP bodies, decoded zstd bodies, and WebSocket messages/frames.
+Multipart overhead counts toward the HTTP limit. Restart to apply changes.
+The upstream model catalog and buffered response limits are independent;
+upstream service limits still apply.
 
 Models and health checks do not occupy generation slots. Images, standalone search, uploads and native routes share slots with Responses. Signed transfers have separate limits. WebSocket slots last for the connection lifetime.
 

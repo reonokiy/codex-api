@@ -37,6 +37,10 @@ Or run from source with the same login and environment variable:
 cargo run --locked --release -- --listen 127.0.0.1:8080
 ```
 
+The request size limit defaults to 64 MiB. Override it with `CODEX_GATEWAY_MAX_REQUEST_BYTES=67108864`
+(pass it with Docker `-e`) or add `--max-request-bytes 67108864` to the executable
+arguments. See [request limits](docs/common.md).
+
 ## Use
 
 Generate text with the official OpenAI Python SDK:
