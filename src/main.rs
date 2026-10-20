@@ -21,7 +21,7 @@ struct Args {
     #[arg(long, default_value_t=300, value_parser=clap::value_parser!(u64).range(1..))]
     timeout_seconds: u64,
     /// Maximum HTTP body, decoded zstd body, and WebSocket message/frame size in bytes.
-    #[arg(long, env = "CODEX_GATEWAY_MAX_REQUEST_BYTES", default_value_t = 16 * 1024 * 1024, value_parser = parse_request_bytes)]
+    #[arg(long, env = "CODEX_GATEWAY_MAX_REQUEST_BYTES", default_value_t = 64 * 1024 * 1024, value_parser = parse_request_bytes)]
     max_request_bytes: usize,
 }
 fn parse_request_bytes(value: &str) -> Result<usize, String> {
@@ -106,6 +106,20 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_limit_defaults_to_64_mib() {
+        use clap::CommandFactory;
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "max_request_bytes")
+            .unwrap();
+        assert_eq!(
+            argument.get_default_values(),
+            &[std::ffi::OsString::from("67108864")]
+        );
+    }
 
     #[test]
     fn request_limit_cli_validation() {

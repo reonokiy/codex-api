@@ -37,9 +37,9 @@ Or run from source with the same login and environment variable:
 cargo run --locked --release -- --listen 127.0.0.1:8080
 ```
 
-To allow requests up to 64 MiB, set `CODEX_GATEWAY_MAX_REQUEST_BYTES=67108864`
+The request size limit defaults to 64 MiB. Override it with `CODEX_GATEWAY_MAX_REQUEST_BYTES=67108864`
 (pass it with Docker `-e`) or add `--max-request-bytes 67108864` to the executable
-arguments. The default is 16 MiB. See [request limits](docs/common.md).
+arguments. See [request limits](docs/common.md).
 
 ## Use
 

@@ -9,7 +9,7 @@ Use `Content-Type: application/json` unless an endpoint documents multipart or W
 
 | Limit | Default |
 | --- | --- |
-| Request body / WebSocket message and frame | 16 MiB; `--max-request-bytes` |
+| Request body / WebSocket message and frame | 64 MiB; `--max-request-bytes` |
 | Decoded native zstd request | Same as `--max-request-bytes` |
 | Buffered tool response / HTTP Responses event stream | 64 MiB |
 | Upstream model catalog | 16 MiB |
