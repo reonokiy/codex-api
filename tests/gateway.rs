@@ -203,6 +203,26 @@ impl Harness {
         login: CodexAuth,
         transfers: bool,
     ) -> Self {
+        Self::with_request_limit(
+            events,
+            status,
+            hang,
+            timeout,
+            login,
+            transfers,
+            16 * 1024 * 1024,
+        )
+        .await
+    }
+    async fn with_request_limit(
+        events: Vec<Value>,
+        status: StatusCode,
+        hang: bool,
+        timeout: Duration,
+        login: CodexAuth,
+        transfers: bool,
+        max_request_bytes: usize,
+    ) -> Self {
         let subscription = login.is_chatgpt_auth();
         let fake = Fake {
             received: Default::default(),
@@ -305,6 +325,7 @@ impl Harness {
                 .unwrap()
         });
         let app = router(Gateway {
+            max_request_bytes,
             telemetry: None,
             backend,
             models,
@@ -1688,4 +1709,50 @@ supports_websockets = {}
             .load(std::sync::atomic::Ordering::SeqCst)
             > 0
     );
+}
+
+#[tokio::test]
+async fn configured_request_limit_applies_to_http_and_decoded_zstd() {
+    let h = Harness::with_request_limit(
+        events(),
+        StatusCode::OK,
+        false,
+        Duration::from_secs(5),
+        CodexAuth::from_api_key("upstream-secret"),
+        false,
+        1024,
+    )
+    .await;
+    let client = reqwest::Client::new();
+    for path in ["/v1/responses", "/codex/responses"] {
+        let response = client
+            .post(format!("{}{path}", h.url))
+            .bearer_auth("client-key")
+            .body(vec![b' '; 1025])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    for length in [1024, 1025] {
+        let compressed = zstd::encode_all(vec![b' '; length].as_slice(), 1).unwrap();
+        let response = client
+            .post(format!("{}/codex/responses", h.url))
+            .bearer_auth("client-key")
+            .header("content-encoding", "zstd")
+            .body(compressed)
+            .send()
+            .await
+            .unwrap();
+        // At the limit the body reaches JSON validation; one byte over is rejected first.
+        assert_eq!(
+            response.status(),
+            if length == 1024 {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::PAYLOAD_TOO_LARGE
+            }
+        );
+    }
+    assert!(h.fake.received.lock().unwrap().is_empty());
 }

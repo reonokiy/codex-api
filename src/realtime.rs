@@ -172,8 +172,8 @@ pub async fn upgrade(
         .map(str::to_owned);
     let mut response = ws
         .protocols(protocols)
-        .max_message_size(16 * 1024 * 1024)
-        .max_frame_size(16 * 1024 * 1024)
+        .max_message_size(gateway.max_request_bytes)
+        .max_frame_size(gateway.max_request_bytes)
         .on_upgrade(move |client| async move {
             let _permit = permit;
             crate::websocket::relay(client, upstream, idle, false, &[], "").await;

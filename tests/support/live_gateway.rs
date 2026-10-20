@@ -53,6 +53,7 @@ impl LiveGateway {
         let model_catalog = Some(models.clone());
         let observed = transports.clone();
         let app = router(Gateway {
+            max_request_bytes: 16 * 1024 * 1024,
             telemetry: None,
             backend,
             models,
