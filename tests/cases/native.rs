@@ -563,3 +563,89 @@ async fn audio_prefix_preserves_oauth_requests_and_upstream_errors() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(h.fake.received.lock().unwrap().len(), 2);
 }
+
+#[tokio::test]
+async fn native_websockets_enforce_configured_message_and_frame_limits() {
+    use futures::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::protocol::frame::{
+        Frame,
+        coding::{Data, OpCode},
+    };
+    use tokio_tungstenite::tungstenite::{Message, client::IntoClientRequest};
+    for (path, delegated) in [
+        ("/codex/guardian", false),
+        ("/codex/guardian-classifier", false),
+        ("/backend-api/wham/remote/control/server", true),
+    ] {
+        for fragmented in [false, true] {
+            let h = Harness::with_request_limit(
+                vec![],
+                StatusCode::OK,
+                false,
+                Duration::from_secs(5),
+                CodexAuth::from_api_key("upstream-secret"),
+                false,
+                1024,
+            )
+            .await;
+            let mut request = format!("{}{path}", h.url.replace("http:", "ws:"))
+                .into_client_request()
+                .unwrap();
+            request.headers_mut().insert(
+                "authorization",
+                if delegated {
+                    "Bearer remote-token"
+                } else {
+                    "Bearer client-key"
+                }
+                .parse()
+                .unwrap(),
+            );
+            if delegated {
+                request.headers_mut().insert(
+                    "x-codex-gateway-authorization",
+                    "Bearer client-key".parse().unwrap(),
+                );
+            }
+            let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+            // An exact-limit binary message must make the complete round trip.
+            ws.send(Message::Binary(vec![7; 1024].into()))
+                .await
+                .unwrap();
+            let reply = tokio::time::timeout(Duration::from_secs(2), ws.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert_eq!(reply, Message::Binary(vec![7; 1024].into()), "{path}");
+            if fragmented {
+                // Each frame fits, but the assembled message exceeds the limit.
+                ws.send(Message::Frame(Frame::message(
+                    vec![7; 512],
+                    OpCode::Data(Data::Binary),
+                    false,
+                )))
+                .await
+                .unwrap();
+                ws.send(Message::Frame(Frame::message(
+                    vec![7; 513],
+                    OpCode::Data(Data::Continue),
+                    true,
+                )))
+                .await
+                .unwrap();
+            } else {
+                ws.send(Message::Binary(vec![7; 1025].into()))
+                    .await
+                    .unwrap();
+            }
+            let reply = tokio::time::timeout(Duration::from_secs(2), ws.next())
+                .await
+                .unwrap();
+            assert!(
+                matches!(reply, None | Some(Err(_)) | Some(Ok(Message::Close(_)))),
+                "{path} fragmented={fragmented}: {reply:?}"
+            );
+        }
+    }
+}

@@ -198,7 +198,9 @@ pub async fn handle(
         use axum::extract::FromRequestParts;
         let ws = WebSocketUpgrade::from_request_parts(&mut parts, &())
             .await
-            .map_err(|e| GatewayError::invalid(e.to_string()))?;
+            .map_err(|e| GatewayError::invalid(e.to_string()))?
+            .max_message_size(gateway.max_request_bytes)
+            .max_frame_size(gateway.max_request_bytes);
         for name in [
             "sec-websocket-key",
             "sec-websocket-version",
