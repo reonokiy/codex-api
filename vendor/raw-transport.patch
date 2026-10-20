@@ -319,7 +319,7 @@
          body: EncodedJsonBody,
 --- a/src/endpoint/responses_websocket.rs
 +++ b/src/endpoint/responses_websocket.rs
-@@ -407,6 +407,52 @@
+@@ -445,6 +445,52 @@
          .await
      }
  
@@ -372,7 +372,7 @@
      /// Opens a WebSocket connection long enough to validate the upgrade response.
      ///
      /// The probe uses the same URL construction, headers, authentication, TLS,
-@@ -492,26 +538,7 @@
+@@ -530,26 +576,7 @@
      connector: &WebSocketConnector,
      turn_state: Option<Arc<OnceLock<String>>>,
  ) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
@@ -400,7 +400,7 @@
  
      let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
      let server_model = response
-@@ -533,6 +560,35 @@
+@@ -571,6 +598,35 @@
          reasoning_included,
          server_model,
      ))
@@ -438,7 +438,7 @@
  fn websocket_config() -> WebSocketConfig {
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -54,11 +54,13 @@
+@@ -55,11 +55,13 @@
  pub use crate::endpoint::ImagesClient;
  pub use crate::endpoint::MemoriesClient;
  pub use crate::endpoint::ModelsClient;
@@ -452,7 +452,7 @@
  pub use crate::endpoint::RealtimeSessionConfig;
  pub use crate::endpoint::RealtimeSessionMode;
  pub use crate::endpoint::RealtimeTranscriptState;
-@@ -77,6 +79,7 @@
+@@ -78,6 +80,7 @@
  pub use crate::error::ApiError;
  pub use crate::files::HostedFileUploadContext;
  pub use crate::files::OPENAI_FILE_UPLOAD_LIMIT_BYTES;

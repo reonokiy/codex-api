@@ -56,7 +56,7 @@ async fn actual_openai_sdk_response_types() {
                 let expected_lite = is_lite && context == "all_turns";
                 assert!(
                     row.1["input"][0]["type"] != "additional_tools",
-                    "requests without tools omit additional_tools in Codex 0.162.1"
+                    "requests without tools omit additional_tools in Codex 0.163.0"
                 );
                 assert_eq!(
                     row.0.contains_key("x-openai-internal-codex-responses-lite"),
