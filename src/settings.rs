@@ -109,6 +109,7 @@ async fn load_backend_inner(codex_home: PathBuf, device_login: bool) -> anyhow::
         provider,
         auth,
         factory,
+        responses_http: Default::default(),
         chatgpt_base_url,
         platform_base_url: "https://api.openai.com/v1".into(),
         auth_base_url: "https://auth.openai.com".into(),

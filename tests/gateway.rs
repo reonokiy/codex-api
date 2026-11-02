@@ -303,6 +303,7 @@ impl Harness {
             ),
             auth,
             factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            responses_http: Default::default(),
             chatgpt_base_url: upstream_url.clone(),
             platform_base_url: upstream_url.clone(),
             auth_base_url: upstream_url.clone(),
@@ -376,6 +377,32 @@ fn parse_sse(text: &str) -> Vec<Value> {
         .filter_map(|line| line.strip_prefix("data: "))
         .map(|data| serde_json::from_str(data).unwrap())
         .collect()
+}
+
+#[tokio::test]
+async fn responses_reuse_upstream_connection() {
+    let expected = events();
+    let h = Harness::new(
+        expected.clone(),
+        StatusCode::OK,
+        false,
+        Duration::from_secs(5),
+    )
+    .await;
+    let client = reqwest::Client::new();
+    for path in ["/v1/responses", "/codex/responses", "/v1/responses"] {
+        let response = client
+            .post(format!("{}{path}", h.url))
+            .bearer_auth("client-key")
+            .json(&json!({"model":h.model,"input":"hello","stream":true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(parse_sse(&response.text().await.unwrap()), expected);
+    }
+    assert_eq!(h.fake.received.lock().unwrap().len(), 3);
+    assert_eq!(h.capture.connection_count(), 1);
 }
 
 #[tokio::test]

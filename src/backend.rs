@@ -5,18 +5,19 @@ use crate::{
 use codex_api::{
     ApiError, Compression, ReqwestTransport, ResponsesApiRequest, ResponsesClient, ResponsesOptions,
 };
-use codex_http_client::{ClientRouteClass, HttpClientFactory};
+use codex_http_client::{ClientRouteClass, HttpClient, HttpClientFactory};
 use codex_login::{AuthManager, default_client::create_client_for_route};
 use codex_model_provider::SharedModelProvider;
 use codex_protocol::protocol::SessionSource;
 use futures::StreamExt;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::{mpsc, oneshot};
 
 pub struct Backend {
     pub provider: SharedModelProvider,
     pub auth: Arc<AuthManager>,
     pub factory: HttpClientFactory,
+    pub responses_http: Mutex<Option<(String, HttpClient)>>,
     pub chatgpt_base_url: String,
     pub platform_base_url: String,
     pub auth_base_url: String,
@@ -339,13 +340,26 @@ impl Backend {
             if *auth_changes.borrow() != revision {
                 continue;
             }
-            let http = create_client_for_route(
-                &self.factory,
-                &resolved.url_for_path("/responses"),
-                ClientRouteClass::Api,
-                codex_login::default_client::ClientRedirectPolicy::Default,
-            )
-            .map_err(GatewayError::internal)?;
+            let url = resolved.url_for_path("/responses");
+            let http = {
+                let mut cached = self
+                    .responses_http
+                    .lock()
+                    .map_err(|_| GatewayError::internal("responses HTTP client lock poisoned"))?;
+                if let Some((_, http)) = cached.as_ref().filter(|(u, _)| u == &url) {
+                    http.clone()
+                } else {
+                    let http = create_client_for_route(
+                        &self.factory,
+                        &url,
+                        ClientRouteClass::Api,
+                        codex_login::default_client::ClientRedirectPolicy::Default,
+                    )
+                    .map_err(GatewayError::internal)?;
+                    *cached = Some((url, http.clone()));
+                    http
+                }
+            };
             let (sender, receiver) = mpsc::channel(8);
             let response_headers = Arc::new(OnceLock::new());
             let transport = TapTransport {

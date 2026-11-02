@@ -20,6 +20,10 @@ impl Drop for Capture {
     }
 }
 impl Capture {
+    pub fn connection_count(&self) -> usize {
+        self.connections.lock().unwrap().len()
+    }
+
     pub async fn start(destination: String) -> Self {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
