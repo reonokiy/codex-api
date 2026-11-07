@@ -78,7 +78,21 @@ pub fn router(gateway: Gateway) -> Router {
         .fallback(crate::native::handle)
         .layer(DefaultBodyLimit::max(max_request_bytes))
         .layer(middleware::from_fn_with_state(gateway.clone(), restricted_api_policy))
+        .layer(middleware::from_fn_with_state(gateway.clone(), request_timing))
         .with_state(gateway)
+}
+
+async fn request_timing(
+    State(gateway): State<Arc<Gateway>>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Response {
+    let Some(telemetry) = &gateway.telemetry else {
+        return next.run(request).await;
+    };
+    let timing = crate::telemetry::HttpRequestGuard::new(telemetry.clone(), &request);
+    let response = next.run(request).await;
+    timing.wrap(response)
 }
 
 // Match complete paths and methods, including native aliases. New routes and
@@ -467,7 +481,7 @@ async fn respond(
             loop {
                 match tokio::time::timeout_at(deadline, running.events.recv()).await {
                     Ok(Some(mut event)) => {
-                        usage.observe(&event.value);
+                        usage.observe_at(&event.value, event.received_at);
                         if aggregate_output && accumulator.observe(&mut event.value) {
                             event.bytes = Bytes::from(format!("event: {}\ndata: {}\n\n",event.value["type"].as_str().unwrap_or("message"),event.value));
                         }
@@ -520,7 +534,7 @@ async fn respond(
                     usage.failure("upstream_error");
                     GatewayError::internal("upstream closed without terminal response")
                 })?;
-            usage.observe(&event.value);
+            usage.observe_at(&event.value, event.received_at);
             if aggregate_output {
                 accumulator.observe(&mut event.value);
             }

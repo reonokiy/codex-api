@@ -85,11 +85,26 @@ with tempfile.TemporaryDirectory() as home:
                 raise AssertionError(f'Unauthenticated request accepted: {endpoint}')
             except urllib.error.HTTPError as error:
                 assert error.code == 401, (endpoint, error.code)
+            request.add_header('Authorization', 'Bearer container-test-key')
+            try:
+                urllib.request.urlopen(request, timeout=2)
+                raise AssertionError(f'Restricted endpoint accepted: {endpoint}')
+            except urllib.error.HTTPError as error:
+                assert error.code == 403, (endpoint, error.code)
+                assert json.load(error)['error']['code'] == 'endpoint_disabled'
         try:
             urllib.request.urlopen(base + '/transfers/unknown-handle', timeout=2)
             raise AssertionError('Unknown transfer handle accepted')
         except urllib.error.HTTPError as error:
-            assert error.code == 404
-        print(f'Container startup, health, auth, model catalog, tools, native routes and transfers passed; {config["Size"] / 1024**2:.1f} MiB')
+            assert error.code == 401
+        request = urllib.request.Request(base + '/transfers/unknown-handle', headers={
+            'Authorization': 'Bearer container-test-key'})
+        try:
+            urllib.request.urlopen(request, timeout=2)
+            raise AssertionError('Restricted transfer endpoint accepted')
+        except urllib.error.HTTPError as error:
+            assert error.code == 403
+            assert json.load(error)['error']['code'] == 'endpoint_disabled'
+        print(f'Container startup, health, auth, model catalog, tools and restricted routes passed; {config["Size"] / 1024**2:.1f} MiB')
     finally:
         docker('rm', '-f', container)

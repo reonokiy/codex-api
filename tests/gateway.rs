@@ -2,6 +2,8 @@
 mod file_cases;
 #[path = "cases/native.rs"]
 mod native_cases;
+#[path = "cases/performance.rs"]
+mod performance_cases;
 #[path = "cases/restricted_api.rs"]
 mod restricted_api_cases;
 mod support;
@@ -234,6 +236,7 @@ impl Harness {
             transfers,
             max_request_bytes,
             true,
+            None,
         )
         .await
     }
@@ -246,6 +249,7 @@ impl Harness {
         transfers: bool,
         max_request_bytes: usize,
         allow_restricted_api: bool,
+        telemetry: Option<Arc<codex_api_gateway::telemetry::Telemetry>>,
     ) -> Self {
         let subscription = login.is_chatgpt_auth();
         let fake = Fake {
@@ -352,7 +356,7 @@ impl Harness {
         let app = router(Gateway {
             allow_restricted_api,
             max_request_bytes,
-            telemetry: None,
+            telemetry,
             backend,
             models,
             key: Some("client-key".into()),

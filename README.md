@@ -96,6 +96,7 @@ limit; see [the request contract](docs/responses.md).
 - [OAuth audio transcription](docs/platform.md#oauth-audio-transcription)
 - [Image generation](docs/images-generations.md) and [editing](docs/images-edits.md)
 - [Authentication and limits](docs/common.md)
+- [OTLP usage, TTFB, TTFT, TPS and request duration](docs/usage-telemetry.md)
 
 ## Test
 

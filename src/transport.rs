@@ -12,6 +12,7 @@ const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 pub struct WireEvent {
     pub bytes: Bytes,
     pub value: Value,
+    pub received_at: std::time::Instant,
 }
 impl WireEvent {
     pub fn terminal(&self) -> bool {
@@ -56,6 +57,7 @@ impl<T: HttpTransport> HttpTransport for TapTransport<T> {
             while let Some(event) = events.next().await {
                 let event = event.map_err(|e| TransportError::Network(format!("invalid upstream SSE: {e}")))?;
                 if event.data == "[DONE]" { continue; }
+                let received_at = std::time::Instant::now();
                 let value: Value = serde_json::from_str(&event.data)
                     .map_err(|e| TransportError::Network(format!("invalid upstream event JSON: {e}")))?;
                 // Preserve the complete JSON payload, including fields Codex's typed events omit.
@@ -65,7 +67,7 @@ impl<T: HttpTransport> HttpTransport for TapTransport<T> {
                 for line in event.data.lines() { encoded.push_str(&format!("data: {line}\n")); }
                 encoded.push('\n');
                 let bytes = Bytes::from(encoded);
-                if sender.send(WireEvent { bytes: bytes.clone(), value }).await.is_err() { break; }
+                if sender.send(WireEvent { bytes: bytes.clone(), value, received_at }).await.is_err() { break; }
                 // The original ResponsesClient receives and parses this same event.
                 yield bytes;
             }

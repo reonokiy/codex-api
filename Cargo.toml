@@ -19,6 +19,7 @@ clap = { version = "4", features = ["derive", "env"] }
 eventsource-stream = "0.2.3"
 futures = "0.3"
 http = "1"
+http-body = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 serde_ignored = "=0.1.14"

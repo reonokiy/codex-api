@@ -14,6 +14,7 @@ async fn restricted_harness_with_events(events: Vec<Value>) -> Harness {
         true,
         16 * 1024 * 1024,
         false,
+        None,
     )
     .await
 }
@@ -29,6 +30,7 @@ async fn full_api_explicitly_enables_account_and_stored_data_routes() {
         false,
         16 * 1024 * 1024,
         true,
+        None,
     )
     .await;
     let client = reqwest::Client::new();
