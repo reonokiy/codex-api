@@ -98,6 +98,57 @@ Performance metrics currently cover Responses and compact inference through
 these instrumented paths. Generic native proxies, standalone images/search,
 audio and Realtime are not given synthetic TTFT or TPS samples.
 
+## HTTP ingress and response lifetime
+
+All HTTP requests handled by the gateway router additionally produce a
+`codex_api.http.request` JSON log and a correlated server span through the same
+OTLP pipeline. This includes authentication/validation failures, disabled
+endpoints, health/model requests, and streaming and buffered responses.
+
+| Metric | Unit | Definition |
+| --- | --- | --- |
+| `codex_api.http.time_to_first_byte` | `s` | Request middleware entry to response headers ready (application-observed TTFB) |
+| `codex_api.http.request.duration` | `s` | Request middleware entry to response-body end, body error, or cancellation |
+
+The HTTP JSON log includes `ttfb_ms` when headers became ready,
+`total_duration_ms`, `method`, a matched route template, `status_code`, a
+generated request ID and `outcome`. Both timing values are also exported as
+numeric span/log attributes using the metric names above. HTTP records are
+separate from `codex_api.usage` records: filter by `event` when querying logs.
+The HTTP request ID identifies that HTTP record and span; it is independent of
+inference usage IDs. Supplied W3C trace context is honored for both.
+
+The clock starts at the outer request middleware, before authorization,
+body reading/decompression, validation, concurrency waiting and upstream
+setup/retries. It excludes time before the HTTP server dispatches the request
+(connection acceptance, TLS and header parsing). TTFB ends when the application
+has the response headers ready, including for an SSE stream that has not
+produced any content yet. It does not wait for the first body chunk or model
+token. Actual socket writes, network delivery and client-observed TTFB require
+measurement at the transport or client.
+
+Total duration follows the response body until the final frame or EOF, including
+time waiting for later stream chunks and downstream consumption as observed by
+the application. Returning response headers does not end this timer. Body
+frames, trailers, size hints and backpressure are preserved. An empty body
+or HEAD response completes at headers. Kernel/proxy buffers and delivery to
+the client's application are outside this measurement.
+
+`outcome` is `completed` for a normally exhausted body, `body_error` for a
+body read error, or `cancelled` if handling/body consumption is dropped early.
+Cancellation duration stops at that drop and must not be treated as a
+successfully completed response duration. A cancellation before headers has
+no TTFB or status code. HTTP error responses with a fully consumed body have
+`completed` outcome and their actual HTTP error status. A `101` upgrade has
+`upgraded` outcome and measures the HTTP handshake only; the upgraded socket's
+lifetime is excluded. WebSocket inference continues to use per-turn TTFT/TPS.
+
+Histogram dimensions are limited to method (unknown methods use `_OTHER`),
+matched route template (fallback paths use `unmatched`), HTTP status when known,
+and outcome. Raw paths, query strings, user/key/request IDs and response content
+are never metric dimensions. HTTP telemetry does not add synthetic token
+measurements to endpoints without upstream usage.
+
 The Talos configuration routes OTLP through Alloy to Mimir, Tempo and Loki.
 The provisioned `codex-api-usage` Grafana dashboard uses Loki usage events for
 user/model filters, token totals and per-request details, and Mimir for rates

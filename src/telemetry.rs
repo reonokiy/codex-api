@@ -30,6 +30,8 @@ pub struct Telemetry {
     inference_duration: Histogram<f64>,
     ttft: Histogram<f64>,
     tps: Histogram<f64>,
+    http_ttfb: Histogram<f64>,
+    http_duration: Histogram<f64>,
     missing: Counter<u64>,
     trust_identity_headers: bool,
 }
@@ -152,6 +154,24 @@ impl Telemetry {
                 .u64_counter("codex_api.usage.missing")
                 .with_unit("{request}")
                 .build(),
+            http_ttfb: meter
+                .f64_histogram("codex_api.http.time_to_first_byte")
+                .with_description(
+                    "Request middleware entry to response headers ready (application TTFB)",
+                )
+                .with_unit("s")
+                .with_boundaries(vec![
+                    0.01, 0.05, 0.1, 0.25, 0.5, 1., 2., 5., 10., 20., 40., 80.,
+                ])
+                .build(),
+            http_duration: meter
+                .f64_histogram("codex_api.http.request.duration")
+                .with_description(
+                    "Request middleware entry to response body completion or cancellation",
+                )
+                .with_unit("s")
+                .with_boundaries(vec![0.1, 0.5, 1., 2., 5., 10., 20., 40., 80., 160., 320.])
+                .build(),
             traces,
             logs,
             metrics,
@@ -164,6 +184,206 @@ impl Telemetry {
         let _ = self.logs.shutdown();
         let _ = self.metrics.shutdown();
         let _ = self.traces.shutdown();
+    }
+}
+
+/// Measures HTTP handling independently of inference, including rejected requests.
+pub(crate) struct HttpRequestGuard {
+    telemetry: Arc<Telemetry>,
+    parent: Context,
+    started: SystemTime,
+    clock: Instant,
+    request_id: String,
+    method: String,
+    route: String,
+    status: Option<u16>,
+    ttfb: Option<Duration>,
+    exported: bool,
+}
+
+impl HttpRequestGuard {
+    pub(crate) fn new(telemetry: Arc<Telemetry>, request: &axum::extract::Request) -> Self {
+        let clock = Instant::now();
+        let started = SystemTime::now();
+        Self {
+            telemetry,
+            parent: TraceContextPropagator::new().extract(&HeaderExtractor(request.headers())),
+            started,
+            clock,
+            request_id: uuid::Uuid::new_v4().to_string(),
+            // Avoid arbitrary methods and raw paths becoming unbounded metric labels.
+            method: match request.method().as_str() {
+                "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "PATCH" | "OPTIONS" | "CONNECT"
+                | "TRACE" => request.method().to_string(),
+                _ => "_OTHER".into(),
+            },
+            route: request
+                .extensions()
+                .get::<axum::extract::MatchedPath>()
+                .map(|path| path.as_str().to_owned())
+                .unwrap_or_else(|| "unmatched".into()),
+            status: None,
+            ttfb: None,
+            exported: false,
+        }
+    }
+
+    pub(crate) fn wrap(mut self, response: axum::response::Response) -> axum::response::Response {
+        use axum::body::HttpBody;
+        self.ttfb = Some(self.clock.elapsed());
+        self.status = Some(response.status().as_u16());
+        if response.status() == http::StatusCode::SWITCHING_PROTOCOLS {
+            // The upgraded socket outlives this HTTP body.
+            self.finish("upgraded");
+            return response;
+        }
+        if self.method == "HEAD" || response.body().is_end_stream() {
+            self.finish("completed");
+            return response;
+        }
+        let (parts, body) = response.into_parts();
+        axum::response::Response::from_parts(
+            parts,
+            axum::body::Body::new(TimedHttpBody {
+                body,
+                timing: Some(self),
+            }),
+        )
+    }
+
+    fn finish(mut self, outcome: &'static str) {
+        // Drop must not export a second cancellation record.
+        self.exported = true;
+        self.export(outcome, self.clock.elapsed());
+    }
+
+    fn export(&self, outcome: &'static str, elapsed: Duration) {
+        let telemetry = &self.telemetry;
+        let mut attributes = vec![
+            KeyValue::new("http.request.method", self.method.clone()),
+            KeyValue::new("http.route", self.route.clone()),
+            KeyValue::new("codex_api.http.outcome", outcome),
+        ];
+        if let Some(status) = self.status {
+            attributes.push(KeyValue::new(
+                "http.response.status_code",
+                i64::from(status),
+            ));
+        }
+        telemetry
+            .http_duration
+            .record(elapsed.as_secs_f64(), &attributes);
+        if let Some(ttfb) = self.ttfb {
+            telemetry.http_ttfb.record(ttfb.as_secs_f64(), &attributes);
+        }
+        attributes.push(KeyValue::new(
+            "codex_api.request.id",
+            self.request_id.clone(),
+        ));
+        attributes.push(KeyValue::new(
+            "codex_api.http.request.duration",
+            elapsed.as_secs_f64(),
+        ));
+        if let Some(ttfb) = self.ttfb {
+            attributes.push(KeyValue::new(
+                "codex_api.http.time_to_first_byte",
+                ttfb.as_secs_f64(),
+            ));
+        }
+        let tracer = telemetry.traces.tracer("codex-api.http");
+        let mut span = tracer
+            .span_builder(format!("{} {}", self.method, self.route))
+            .with_kind(SpanKind::Server)
+            .with_start_time(self.started)
+            .with_attributes(attributes.clone())
+            .start_with_context(&tracer, &self.parent);
+        if outcome == "body_error" || outcome == "cancelled" {
+            span.set_status(Status::error(outcome));
+        } else if self.status.is_some_and(|s| s >= 500) {
+            span.set_status(Status::error("http_server_error"));
+        }
+        let mut body = json!({
+            "event": "codex_api.http.request",
+            "request_id": self.request_id,
+            "method": self.method,
+            "route": self.route,
+            "status_code": self.status,
+            "outcome": outcome,
+            "started_at_unix_ms": self.started.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+            "total_duration_ms": elapsed.as_secs_f64() * 1000.,
+        });
+        if let Some(ttfb) = self.ttfb {
+            body["ttfb_ms"] = json!(ttfb.as_secs_f64() * 1000.);
+        }
+        let logger = telemetry.logs.logger("codex-api.http");
+        let mut log = logger.create_log_record();
+        log.set_event_name("codex_api.http.request");
+        log.set_timestamp(SystemTime::now());
+        log.set_severity_number(Severity::Info);
+        log.set_body(AnyValue::from(body.to_string()));
+        for attr in attributes {
+            let value = match attr.value {
+                opentelemetry::Value::String(v) => AnyValue::String(v),
+                opentelemetry::Value::I64(v) => AnyValue::Int(v),
+                opentelemetry::Value::F64(v) => AnyValue::Double(v),
+                _ => continue,
+            };
+            log.add_attribute(attr.key, value);
+        }
+        let context = span.span_context();
+        log.set_trace_context(
+            context.trace_id(),
+            context.span_id(),
+            Some(context.trace_flags()),
+        );
+        logger.emit(log);
+        span.end_with_timestamp(self.started + elapsed);
+    }
+}
+
+impl Drop for HttpRequestGuard {
+    fn drop(&mut self) {
+        if !self.exported {
+            self.export("cancelled", self.clock.elapsed());
+        }
+    }
+}
+
+struct TimedHttpBody {
+    body: axum::body::Body,
+    timing: Option<HttpRequestGuard>,
+}
+
+impl http_body::Body for TimedHttpBody {
+    type Data = bytes::Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        let this = self.get_mut();
+        let frame = std::pin::Pin::new(&mut this.body).poll_frame(cx);
+        let outcome = match &frame {
+            std::task::Poll::Ready(Some(Err(_))) => Some("body_error"),
+            std::task::Poll::Ready(None) => Some("completed"),
+            std::task::Poll::Ready(Some(Ok(_))) if this.body.is_end_stream() => Some("completed"),
+            _ => None,
+        };
+        if let Some(outcome) = outcome
+            && let Some(timing) = this.timing.take()
+        {
+            timing.finish(outcome);
+        }
+        frame
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        self.body.size_hint()
     }
 }
 
@@ -730,6 +950,178 @@ mod tests {
             "input_tokens_details":{"cached_tokens":2},
             "output_tokens_details":{"reasoning_tokens":1}
         }}})
+    }
+
+    #[tokio::test]
+    async fn http_timing_waits_for_stream_end_and_exports_numeric_metrics() {
+        use futures::StreamExt;
+        let (request, logs, spans, metrics) = setup_exporters(false);
+        let telemetry = request.telemetry.unwrap();
+        let mut timing = HttpRequestGuard::new(
+            telemetry.clone(),
+            &axum::extract::Request::new(axum::body::Body::empty()),
+        );
+        timing.clock -= Duration::from_secs(2);
+        let (release, wait) = tokio::sync::oneshot::channel::<()>();
+        let body = axum::body::Body::from_stream(async_stream::stream! {
+            yield Ok::<_, std::io::Error>(bytes::Bytes::from_static(b"first"));
+            let _ = wait.await;
+            yield Ok(bytes::Bytes::from_static(b"last"));
+        });
+        let response = timing.wrap(axum::response::Response::new(body));
+        assert!(bodies(&logs).is_empty());
+        let mut stream = response.into_body().into_data_stream();
+        assert_eq!(stream.next().await.unwrap().unwrap(), "first");
+        assert!(bodies(&logs).is_empty());
+        release.send(()).unwrap();
+        assert_eq!(stream.next().await.unwrap().unwrap(), "last");
+        assert!(stream.next().await.is_none());
+        drop(stream);
+        let records = bodies(&logs);
+        assert_eq!(records.len(), 1);
+        let body = &records[0];
+        assert_eq!(body["outcome"], "completed");
+        let ttfb = body["ttfb_ms"].as_f64().unwrap();
+        let total = body["total_duration_ms"].as_f64().unwrap();
+        assert!(ttfb >= 2000. && total >= ttfb);
+        let values = [
+            ("codex_api.http.time_to_first_byte", ttfb / 1000.),
+            ("codex_api.http.request.duration", total / 1000.),
+        ];
+        let spans = spans.get_finished_spans().unwrap();
+        assert_eq!(spans.len(), 1);
+        let records = logs.get_emitted_logs().unwrap();
+        for (name, value) in values {
+            assert!(spans[0].attributes.iter().any(|attribute| {
+                attribute.key.as_str() == name
+                    && matches!(attribute.value, opentelemetry::Value::F64(v) if (v - value).abs() < 1e-9)
+            }));
+            assert!(records[0].record.attributes_iter().any(|(key, attr)| {
+                key.as_str() == name
+                    && matches!(attr, AnyValue::Double(v) if (v - value).abs() < 1e-9)
+            }));
+        }
+        telemetry.metrics.force_flush().unwrap();
+        let mut checked = 0;
+        for resource in metrics.get_finished_metrics().unwrap() {
+            for scope in resource.scope_metrics() {
+                for metric in scope.metrics() {
+                    let Some((_, expected)) =
+                        values.iter().find(|(name, _)| *name == metric.name())
+                    else {
+                        continue;
+                    };
+                    assert_eq!(metric.unit(), "s");
+                    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = metric.data()
+                    else {
+                        panic!("f64 histogram expected");
+                    };
+                    let points: Vec<_> = histogram.data_points().collect();
+                    assert_eq!(points.len(), 1);
+                    assert_eq!(points[0].count(), 1);
+                    assert!((points[0].sum() - expected).abs() < 1e-9);
+                    assert!(points[0].attributes().all(|attr| {
+                        matches!(
+                            attr.key.as_str(),
+                            "http.request.method"
+                                | "http.route"
+                                | "http.response.status_code"
+                                | "codex_api.http.outcome"
+                        )
+                    }));
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 2);
+    }
+
+    #[tokio::test]
+    async fn http_timing_distinguishes_errors_and_cancellation_before_and_after_headers() {
+        use futures::StreamExt;
+        let (request, logs) = setup(false);
+        let telemetry = request.telemetry.unwrap();
+        let new_guard = || {
+            HttpRequestGuard::new(
+                telemetry.clone(),
+                &axum::extract::Request::new(axum::body::Body::empty()),
+            )
+        };
+        drop(new_guard());
+        let body = axum::body::Body::from_stream(futures::stream::pending::<
+            Result<bytes::Bytes, std::io::Error>,
+        >());
+        drop(new_guard().wrap(axum::response::Response::new(body)));
+        let body = axum::body::Body::from_stream(futures::stream::iter([Err::<bytes::Bytes, _>(
+            std::io::Error::other("test body error"),
+        )]));
+        let mut stream = new_guard()
+            .wrap(axum::response::Response::new(body))
+            .into_body()
+            .into_data_stream();
+        assert!(stream.next().await.unwrap().is_err());
+        drop(stream);
+        let records = bodies(&logs);
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0]["outcome"], "cancelled");
+        assert!(records[0].get("ttfb_ms").is_none());
+        assert!(records[0]["status_code"].is_null());
+        assert_eq!(records[1]["outcome"], "cancelled");
+        assert!(records[1]["ttfb_ms"].is_number());
+        assert_eq!(records[2]["outcome"], "body_error");
+        assert!(!records[2].to_string().contains("test body error"));
+    }
+
+    #[tokio::test]
+    async fn http_timing_preserves_frames_trailers_and_size_hint() {
+        use axum::body::HttpBody;
+        struct Frames(VecDeque<http_body::Frame<bytes::Bytes>>);
+        impl http_body::Body for Frames {
+            type Data = bytes::Bytes;
+            type Error = std::convert::Infallible;
+            fn poll_frame(
+                mut self: std::pin::Pin<&mut Self>,
+                _: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>>
+            {
+                std::task::Poll::Ready(self.0.pop_front().map(Ok))
+            }
+            fn is_end_stream(&self) -> bool {
+                self.0.is_empty()
+            }
+            fn size_hint(&self) -> http_body::SizeHint {
+                http_body::SizeHint::with_exact(4)
+            }
+        }
+        let (request, logs) = setup(false);
+        let timing = HttpRequestGuard::new(
+            request.telemetry.unwrap(),
+            &axum::extract::Request::new(axum::body::Body::empty()),
+        );
+        let mut trailers = HeaderMap::new();
+        trailers.insert("x-test-trailer", "kept".parse().unwrap());
+        let body = axum::body::Body::new(Frames(VecDeque::from([
+            http_body::Frame::data(bytes::Bytes::from_static(b"data")),
+            http_body::Frame::trailers(trailers.clone()),
+        ])));
+        let response = timing.wrap(axum::response::Response::new(body));
+        let mut body = response.into_body();
+        assert_eq!(body.size_hint().exact(), Some(4));
+        let first = futures::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.into_data().unwrap(), "data");
+        assert!(bodies(&logs).is_empty());
+        let last = futures::future::poll_fn(|cx| std::pin::Pin::new(&mut body).poll_frame(cx))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(last.into_trailers().unwrap(), trailers);
+        assert!(body.is_end_stream());
+        drop(body);
+        assert_eq!(bodies(&logs).len(), 1);
+        assert_eq!(bodies(&logs)[0]["outcome"], "completed");
     }
 
     #[test]

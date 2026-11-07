@@ -78,7 +78,21 @@ pub fn router(gateway: Gateway) -> Router {
         .fallback(crate::native::handle)
         .layer(DefaultBodyLimit::max(max_request_bytes))
         .layer(middleware::from_fn_with_state(gateway.clone(), restricted_api_policy))
+        .layer(middleware::from_fn_with_state(gateway.clone(), request_timing))
         .with_state(gateway)
+}
+
+async fn request_timing(
+    State(gateway): State<Arc<Gateway>>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Response {
+    let Some(telemetry) = &gateway.telemetry else {
+        return next.run(request).await;
+    };
+    let timing = crate::telemetry::HttpRequestGuard::new(telemetry.clone(), &request);
+    let response = next.run(request).await;
+    timing.wrap(response)
 }
 
 // Match complete paths and methods, including native aliases. New routes and
