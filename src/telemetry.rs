@@ -1,4 +1,4 @@
-//! Usage-only OpenTelemetry. Never collect prompts, tool arguments, or credentials.
+//! Usage and timing OpenTelemetry. Never collect content or credentials.
 use http::HeaderMap;
 use opentelemetry::{
     Context, KeyValue,
@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 pub struct Telemetry {
@@ -27,6 +27,9 @@ pub struct Telemetry {
     cached: Counter<u64>,
     reasoning: Counter<u64>,
     duration: Histogram<f64>,
+    inference_duration: Histogram<f64>,
+    ttft: Histogram<f64>,
+    tps: Histogram<f64>,
     missing: Counter<u64>,
     trust_identity_headers: bool,
 }
@@ -125,6 +128,26 @@ impl Telemetry {
                     40.96, 81.92,
                 ])
                 .build(),
+            inference_duration: meter
+                .f64_histogram("codex_api.inference.duration")
+                .with_description("Inference start to terminal event, excluding downstream drain")
+                .with_unit("s")
+                .with_boundaries(vec![0.1, 0.5, 1., 2., 5., 10., 20., 40., 80., 160., 320.])
+                .build(),
+            ttft: meter
+                .f64_histogram("codex_api.inference.time_to_first_token")
+                .with_description("Inference start to first non-empty generated content delta")
+                .with_unit("s")
+                .with_boundaries(vec![
+                    0.01, 0.05, 0.1, 0.25, 0.5, 1., 2., 5., 10., 20., 40., 80.,
+                ])
+                .build(),
+            tps: meter
+                .f64_histogram("codex_api.inference.output_tokens_per_second")
+                .with_description("Reported output tokens divided by inference duration")
+                .with_unit("{token}/s")
+                .with_boundaries(vec![1., 2., 5., 10., 20., 40., 80., 160., 320., 640.])
+                .build(),
             missing: meter
                 .u64_counter("codex_api.usage.missing")
                 .with_unit("{request}")
@@ -208,6 +231,8 @@ impl RequestTelemetry {
             transport,
             started: SystemTime::now(),
             clock: Instant::now(),
+            first_output: None,
+            finished: None,
             status: "cancelled",
             error: Some("client_disconnect"),
             usage: None,
@@ -255,6 +280,8 @@ pub struct UsageGuard {
     transport: &'static str,
     started: SystemTime,
     clock: Instant,
+    first_output: Option<Duration>,
+    finished: Option<Duration>,
     status: &'static str,
     error: Option<&'static str>,
     usage: Option<Usage>,
@@ -266,6 +293,17 @@ impl UsageGuard {
     }
 
     pub fn observe(&mut self, event: &Value) {
+        self.observe_at(event, Instant::now());
+    }
+
+    pub(crate) fn observe_at(&mut self, event: &Value, received_at: Instant) {
+        if self.finished.is_some() {
+            return;
+        }
+        let elapsed = received_at.saturating_duration_since(self.clock);
+        if self.first_output.is_none() && is_output_delta(event) {
+            self.first_output = Some(elapsed);
+        }
         let response = &event["response"];
         if let Some(id) = label(response["id"].as_str()) {
             self.response_id = Some(id);
@@ -288,8 +326,35 @@ impl UsageGuard {
             }
             _ => return,
         }
+        self.finished = Some(elapsed);
         self.usage = Usage::from_value(&response["usage"]);
     }
+
+    fn tokens_per_second(&self) -> Option<f64> {
+        if self.status != "completed" {
+            return None;
+        }
+        let seconds = self.finished?.as_secs_f64();
+        let tokens = self.usage.as_ref()?.output?;
+        // No estimate from delta counts: one chunk can contain many tokens.
+        (seconds > 0. && tokens > 0).then(|| tokens as f64 / seconds)
+    }
+}
+
+fn is_output_delta(event: &Value) -> bool {
+    matches!(
+        event["type"].as_str(),
+        Some(
+            "response.output_text.delta"
+                | "response.refusal.delta"
+                | "response.reasoning_text.delta"
+                | "response.reasoning_summary_text.delta"
+                | "response.function_call_arguments.delta"
+                | "response.custom_tool_call_input.delta"
+        )
+    ) && event["delta"]
+        .as_str()
+        .is_some_and(|delta| !delta.is_empty())
 }
 
 impl Drop for UsageGuard {
@@ -298,6 +363,8 @@ impl Drop for UsageGuard {
             return;
         };
         let elapsed = self.clock.elapsed();
+        let inference_duration = self.finished.unwrap_or(elapsed);
+        let tps = self.tokens_per_second();
         let mut attributes = vec![
             KeyValue::new("gen_ai.operation.name", "chat"),
             KeyValue::new("gen_ai.provider.name", "openai"),
@@ -316,6 +383,15 @@ impl Drop for UsageGuard {
         telemetry
             .duration
             .record(elapsed.as_secs_f64(), &attributes);
+        telemetry
+            .inference_duration
+            .record(inference_duration.as_secs_f64(), &attributes);
+        if let Some(ttft) = self.first_output {
+            telemetry.ttft.record(ttft.as_secs_f64(), &attributes);
+        }
+        if let Some(tps) = tps {
+            telemetry.tps.record(tps, &attributes);
+        }
         if let Some(usage) = &self.usage {
             for (counter, count) in [
                 (&telemetry.input, usage.input),
@@ -331,6 +407,22 @@ impl Drop for UsageGuard {
             telemetry.missing.add(1, &attributes);
         }
         attributes.push(KeyValue::new("user.id", self.request.user.clone()));
+        attributes.push(KeyValue::new(
+            "codex_api.inference.duration",
+            inference_duration.as_secs_f64(),
+        ));
+        if let Some(ttft) = self.first_output {
+            attributes.push(KeyValue::new(
+                "codex_api.inference.time_to_first_token",
+                ttft.as_secs_f64(),
+            ));
+        }
+        if let Some(tps) = tps {
+            attributes.push(KeyValue::new(
+                "codex_api.inference.output_tokens_per_second",
+                tps,
+            ));
+        }
         attributes.push(KeyValue::new(
             "codex_api.request.id",
             self.request_id.clone(),
@@ -353,7 +445,14 @@ impl Drop for UsageGuard {
             "status": self.status, "error_type": self.error,
             "started_at_unix_ms": self.started.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
             "duration_ms": elapsed.as_millis() as u64, "usage_available": self.usage.is_some(),
+            "inference_duration_ms": inference_duration.as_secs_f64() * 1000.,
         });
+        if let Some(ttft) = self.first_output {
+            body["ttft_ms"] = json!(ttft.as_secs_f64() * 1000.);
+        }
+        if let Some(tps) = tps {
+            body["tps"] = json!(tps);
+        }
         if let Some(usage) = &self.usage {
             for (field, key, count) in [
                 ("input_tokens", "gen_ai.usage.input_tokens", usage.input),
@@ -399,6 +498,7 @@ impl Drop for UsageGuard {
                 opentelemetry::Value::String(v) => AnyValue::String(v),
                 opentelemetry::Value::I64(v) => AnyValue::Int(v),
                 opentelemetry::Value::Bool(v) => AnyValue::Boolean(v),
+                opentelemetry::Value::F64(v) => AnyValue::Double(v),
                 _ => continue,
             };
             log.add_attribute(attr.key, value);
@@ -419,16 +519,24 @@ impl Drop for UsageGuard {
 pub struct WebSocketUsage {
     request: RequestTelemetry,
     pending: HashMap<String, VecDeque<UsageGuard>>,
-    active: HashMap<String, UsageGuard>,
+    active: HashMap<String, ActiveUsage>,
+    item_responses: HashMap<String, String>,
     completed: HashSet<String>,
     recent: VecDeque<String>,
 }
+
+struct ActiveUsage {
+    lane: String,
+    guard: UsageGuard,
+}
+
 impl WebSocketUsage {
     pub fn new(request: RequestTelemetry) -> Self {
         Self {
             request,
             pending: HashMap::new(),
             active: HashMap::new(),
+            item_responses: HashMap::new(),
             completed: HashSet::new(),
             recent: VecDeque::new(),
         }
@@ -461,6 +569,10 @@ impl WebSocketUsage {
         guard
     }
     pub fn observe(&mut self, event: &Value) {
+        self.observe_at(event, Instant::now());
+    }
+
+    pub(crate) fn observe_at(&mut self, event: &Value, received_at: Instant) {
         let lane = label(event["stream_id"].as_str()).unwrap_or_default();
         let id = label(event["response"]["id"].as_str());
         match event["type"].as_str() {
@@ -469,8 +581,8 @@ impl WebSocketUsage {
                     && !self.active.contains_key(&id)
                     && let Some(mut guard) = self.take_pending(&lane)
                 {
-                    guard.observe(event);
-                    self.active.insert(id, guard);
+                    guard.observe_at(event, received_at);
+                    self.active.insert(id, ActiveUsage { lane, guard });
                 }
             }
             Some("response.completed" | "response.failed" | "response.incomplete") => {
@@ -488,35 +600,113 @@ impl WebSocketUsage {
                 if let Some(mut guard) = id
                     .as_ref()
                     .and_then(|id| self.active.remove(id))
+                    .map(|active| active.guard)
                     .or_else(|| self.take_pending(&lane))
                 {
-                    guard.observe(event);
+                    guard.observe_at(event, received_at);
+                }
+                if let Some(id) = id {
+                    self.item_responses.retain(|_, response| response != &id);
                 }
             }
-            _ => {}
+            _ => {
+                if let Some(id) = self.active_id(event) {
+                    if self.item_responses.len() < 1024
+                        && let Some(item) = label(
+                            event["item_id"]
+                                .as_str()
+                                .or_else(|| event["item"]["id"].as_str()),
+                        )
+                    {
+                        self.item_responses.insert(item, id.clone());
+                    }
+                    if let Some(active) = self.active.get_mut(&id) {
+                        active.guard.observe_at(event, received_at);
+                    }
+                }
+            }
         }
+    }
+
+    fn active_id(&self, event: &Value) -> Option<String> {
+        if let Some(id) = event
+            .get("response_id")
+            .or_else(|| event["response"].get("id"))
+        {
+            let id = label(id.as_str())?;
+            return self.active.contains_key(&id).then_some(id);
+        }
+        if let Some(item) = event["item_id"].as_str() {
+            // An unknown item can belong to a finished or untracked response;
+            // do not let a late delta start another turn's TTFT clock.
+            return self.item_responses.get(item).cloned();
+        }
+        // Responses deltas often omit response_id. Attribute by an item's ID
+        // or an unambiguous lane; never guess between multiplexed responses.
+        let lane = event.get("stream_id").map(|v| label(v.as_str()));
+        let lane = match lane {
+            Some(Some(lane)) => Some(lane),
+            Some(None) => return None,
+            None => None,
+        };
+        let mut candidates = self
+            .active
+            .iter()
+            .filter(|(_, active)| lane.as_ref().is_none_or(|lane| &active.lane == lane));
+        let (id, _) = candidates.next()?;
+        candidates.next().is_none().then(|| id.clone())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opentelemetry_sdk::logs::InMemoryLogExporter;
+    use opentelemetry_sdk::{
+        logs::InMemoryLogExporter,
+        metrics::{
+            InMemoryMetricExporter,
+            data::{AggregatedMetrics, MetricData},
+        },
+        trace::InMemorySpanExporter,
+    };
 
     fn setup(trust: bool) -> (RequestTelemetry, InMemoryLogExporter) {
+        let (request, logs, _, _) = setup_exporters(trust);
+        (request, logs)
+    }
+
+    fn setup_exporters(
+        trust: bool,
+    ) -> (
+        RequestTelemetry,
+        InMemoryLogExporter,
+        InMemorySpanExporter,
+        InMemoryMetricExporter,
+    ) {
         let exporter = InMemoryLogExporter::default();
+        let spans = InMemorySpanExporter::default();
+        let metrics = InMemoryMetricExporter::default();
         let telemetry = Arc::new(Telemetry::new(
-            SdkTracerProvider::builder().build(),
+            SdkTracerProvider::builder()
+                .with_simple_exporter(spans.clone())
+                .build(),
             SdkLoggerProvider::builder()
                 .with_simple_exporter(exporter.clone())
                 .build(),
-            SdkMeterProvider::builder().build(),
+            SdkMeterProvider::builder()
+                .with_periodic_exporter(metrics.clone())
+                .build(),
             trust,
         ));
         let mut headers = HeaderMap::new();
         headers.insert("x-user-id", "user-1".parse().unwrap());
         headers.insert("x-api-key-id", "key-1".parse().unwrap());
-        (RequestTelemetry::new(Some(telemetry), &headers), exporter)
+        (
+            RequestTelemetry::new(Some(telemetry), &headers),
+            exporter,
+            spans,
+            metrics,
+        )
     }
 
     fn bodies(exporter: &InMemoryLogExporter) -> Vec<Value> {
@@ -585,5 +775,274 @@ mod tests {
         assert_eq!(records.len(), 2);
         assert!(records.iter().all(|body| body["total_tokens"] == 15));
         assert_ne!(records[0]["request_id"], records[1]["request_id"]);
+    }
+
+    #[test]
+    fn timings_export_to_logs_spans_and_histograms_without_identity_dimensions() {
+        let (request, logs, spans, metrics) = setup_exporters(true);
+        let mut guard = request.start("gpt-5", "responses", "http");
+        guard.clock = Instant::now() - Duration::from_secs(10);
+        let clock = guard.clock;
+        guard.observe_at(
+            &json!({"type":"response.created","response":{"id":"resp-1"}}),
+            clock + Duration::from_millis(100),
+        );
+        guard.observe_at(
+            &json!({"type":"response.output_text.delta","delta":""}),
+            clock + Duration::from_millis(500),
+        );
+        guard.observe_at(
+            &json!({"type":"response.output_text.delta","delta":"several tokens in one chunk"}),
+            clock + Duration::from_secs(1),
+        );
+        guard.observe_at(
+            &json!({"type":"response.output_text.delta","delta":"more"}),
+            clock + Duration::from_secs(2),
+        );
+        guard.observe_at(&completed("resp-1"), clock + Duration::from_secs(4));
+        guard.observe_at(&completed("resp-1"), clock + Duration::from_secs(8));
+        drop(guard);
+
+        let body = &bodies(&logs)[0];
+        assert_eq!(body["ttft_ms"], 1000.);
+        assert_eq!(body["inference_duration_ms"], 4000.);
+        assert_eq!(body["tps"], 0.75);
+        assert!(body["duration_ms"].as_u64().unwrap() >= 10_000);
+        let values = [
+            ("codex_api.inference.duration", "s", 4.),
+            ("codex_api.inference.time_to_first_token", "s", 1.),
+            (
+                "codex_api.inference.output_tokens_per_second",
+                "{token}/s",
+                0.75,
+            ),
+        ];
+        let spans = spans.get_finished_spans().unwrap();
+        assert_eq!(spans.len(), 1);
+        let records = logs.get_emitted_logs().unwrap();
+        for (name, _, expected) in values {
+            assert!(spans[0].attributes.contains(&KeyValue::new(name, expected)));
+            assert!(records[0].record.attributes_iter().any(|(key, value)| {
+                key.as_str() == name && value == &AnyValue::Double(expected)
+            }));
+        }
+        request
+            .telemetry
+            .as_ref()
+            .unwrap()
+            .metrics
+            .force_flush()
+            .unwrap();
+        let mut checked = 0;
+        for resource in metrics.get_finished_metrics().unwrap() {
+            for scope in resource.scope_metrics() {
+                for metric in scope.metrics() {
+                    let Some((_, unit, expected)) =
+                        values.iter().find(|(name, _, _)| *name == metric.name())
+                    else {
+                        continue;
+                    };
+                    assert_eq!(metric.unit(), *unit);
+                    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = metric.data()
+                    else {
+                        panic!("f64 histogram expected");
+                    };
+                    let points: Vec<_> = histogram.data_points().collect();
+                    assert_eq!(points.len(), 1);
+                    assert_eq!(points[0].count(), 1);
+                    assert_eq!(points[0].sum(), *expected);
+                    assert!(points[0].attributes().all(|attribute| {
+                        !matches!(
+                            attribute.key.as_str(),
+                            "user.id"
+                                | "codex_api.key.id"
+                                | "codex_api.request.id"
+                                | "gen_ai.response.id"
+                        )
+                    }));
+                    checked += 1;
+                }
+            }
+        }
+        assert_eq!(checked, 3);
+        assert!(!body.to_string().contains("several tokens"));
+    }
+
+    #[test]
+    fn first_output_supports_reasoning_refusals_and_tool_only_responses() {
+        let (request, exporter) = setup(false);
+        for kind in [
+            "response.output_text.delta",
+            "response.refusal.delta",
+            "response.reasoning_text.delta",
+            "response.reasoning_summary_text.delta",
+            "response.function_call_arguments.delta",
+            "response.custom_tool_call_input.delta",
+        ] {
+            let mut guard = request.start("gpt-5", "responses", "http");
+            guard.clock = Instant::now() - Duration::from_secs(10);
+            let clock = guard.clock;
+            guard.observe_at(
+                &json!({"type":"response.output_item.added","item":{"id":"item-1"}}),
+                clock + Duration::from_millis(10),
+            );
+            guard.observe_at(
+                &json!({"type":kind,"delta":"generated content"}),
+                clock + Duration::from_millis(250),
+            );
+            guard.observe_at(&completed("resp-1"), clock + Duration::from_secs(1));
+        }
+        let records = bodies(&exporter);
+        assert_eq!(records.len(), 6);
+        assert!(
+            records
+                .iter()
+                .all(|body| body["ttft_ms"] == 250. && body["tps"] == 3.)
+        );
+    }
+
+    #[test]
+    fn missing_deltas_usage_and_zero_values_do_not_invent_rates() {
+        let (request, exporter) = setup(false);
+        for case in [
+            "no_deltas",
+            "no_usage",
+            "zero_tokens",
+            "zero_time",
+            "failed",
+            "incomplete",
+            "cancelled",
+            "parser_error",
+        ] {
+            let mut guard = request.start("gpt-5", "responses", "http");
+            guard.clock = Instant::now() - Duration::from_secs(10);
+            let clock = guard.clock;
+            if case != "no_deltas" && case != "zero_time" {
+                guard.observe_at(
+                    &json!({"type":"response.output_text.delta","delta":"generated"}),
+                    clock + Duration::from_millis(500),
+                );
+            }
+            let mut event = completed(case);
+            match case {
+                "no_usage" => event["response"]["usage"] = Value::Null,
+                "zero_tokens" => event["response"]["usage"]["output_tokens"] = json!(0),
+                "failed" => event["type"] = json!("response.failed"),
+                "incomplete" => event["type"] = json!("response.incomplete"),
+                _ => {}
+            }
+            if case != "cancelled" {
+                let duration = if case == "zero_time" {
+                    Duration::ZERO
+                } else {
+                    Duration::from_secs(2)
+                };
+                guard.observe_at(&event, clock + duration);
+            }
+            if case == "parser_error" {
+                guard.failure("upstream_error");
+            }
+            drop(guard);
+            let records = bodies(&exporter);
+            let body = records.last().unwrap();
+            if case == "no_deltas" {
+                assert!(body.get("ttft_ms").is_none());
+                assert_eq!(body["tps"], 1.5);
+            } else {
+                assert!(body.get("tps").is_none(), "{case}: {body}");
+            }
+        }
+    }
+
+    #[test]
+    fn websocket_multiplexed_items_lanes_and_response_ids_have_independent_timings() {
+        let (request, exporter) = setup(false);
+        let mut socket = WebSocketUsage::new(request);
+        let clock = Instant::now() - Duration::from_secs(10);
+        for lane in ["a", "b"] {
+            socket.request(
+                &json!({"type":"response.create","model":"gpt-5","stream_id":lane}).to_string(),
+            );
+            socket.pending.get_mut(lane).unwrap()[0].clock = clock;
+            socket.observe_at(
+                &json!({"type":"response.created","stream_id":lane,"response":{"id":format!("resp-{lane}")}}),
+                clock + Duration::from_millis(100),
+            );
+        }
+        socket.observe_at(
+            &json!({"type":"response.output_text.delta","delta":"ambiguous"}),
+            clock + Duration::from_millis(200),
+        );
+        socket.observe_at(
+            &json!({"type":"response.output_text.delta","response_id":"unknown","delta":"unrelated"}),
+            clock + Duration::from_millis(300),
+        );
+        socket.observe_at(
+            &json!({"type":"response.output_item.added","stream_id":"a","item":{"id":"item-a"}}),
+            clock + Duration::from_millis(400),
+        );
+        socket.observe_at(
+            &json!({"type":"response.output_text.delta","item_id":"item-a","delta":"a"}),
+            clock + Duration::from_secs(1),
+        );
+        socket.observe_at(
+            &json!({"type":"response.function_call_arguments.delta","response_id":"resp-b","delta":"{}"}),
+            clock + Duration::from_secs(3),
+        );
+        for (id, seconds) in [("resp-b", 4), ("resp-a", 6)] {
+            socket.observe_at(&completed(id), clock + Duration::from_secs(seconds));
+            socket.observe_at(&completed(id), clock + Duration::from_secs(9));
+        }
+        assert!(socket.item_responses.is_empty());
+        drop(socket);
+        let records = bodies(&exporter);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["response_id"], "resp-b");
+        assert_eq!(records[0]["ttft_ms"], 3000.);
+        assert_eq!(records[0]["tps"], 0.75);
+        assert_eq!(records[1]["response_id"], "resp-a");
+        assert_eq!(records[1]["ttft_ms"], 1000.);
+        assert_eq!(records[1]["tps"], 0.5);
+    }
+
+    #[test]
+    fn websocket_lane_deltas_require_one_active_response_in_that_lane() {
+        let (request, exporter) = setup(false);
+        let mut socket = WebSocketUsage::new(request);
+        let clock = Instant::now() - Duration::from_secs(10);
+        for (id, lane) in [
+            ("resp-1", "shared"),
+            ("resp-2", "shared"),
+            ("resp-3", "other"),
+        ] {
+            socket.request(
+                &json!({"type":"response.create","model":"gpt-5","stream_id":lane}).to_string(),
+            );
+            socket.pending.get_mut(lane).unwrap()[0].clock = clock;
+            socket.observe_at(
+                &json!({"type":"response.created","stream_id":lane,"response":{"id":id}}),
+                clock + Duration::from_millis(100),
+            );
+        }
+        socket.observe_at(
+            &json!({"type":"response.output_text.delta","stream_id":"other","item_id":"old-item","delta":"late"}),
+            clock + Duration::from_millis(500),
+        );
+        socket.observe_at(
+            &json!({"type":"response.output_text.delta","stream_id":"shared","delta":"ambiguous"}),
+            clock + Duration::from_secs(1),
+        );
+        socket.observe_at(
+            &json!({"type":"response.output_text.delta","stream_id":"other","delta":"clear"}),
+            clock + Duration::from_secs(2),
+        );
+        for id in ["resp-1", "resp-2", "resp-3"] {
+            socket.observe_at(&completed(id), clock + Duration::from_secs(4));
+        }
+        drop(socket);
+        let records = bodies(&exporter);
+        assert!(records[0].get("ttft_ms").is_none());
+        assert!(records[1].get("ttft_ms").is_none());
+        assert_eq!(records[2]["ttft_ms"], 2000.);
     }
 }

@@ -141,8 +141,9 @@ pub(crate) async fn relay_with_telemetry<S, E>(
                     let close = matches!(message, Upstream::Close(_));
                     let message = match message {
                         Upstream::Text(v) => {
+                            let received_at = std::time::Instant::now();
                             let mut text = v.as_str().to_owned();
-                            if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text) { usage.observe(&event); }
+                            if let Ok(event) = serde_json::from_str::<serde_json::Value>(&text) { usage.observe_at(&event, received_at); }
                             if public && let Ok(mut event) = serde_json::from_str::<serde_json::Value>(&text) && accumulator.observe(&mut event) { text = event.to_string(); }
                             Message::Text(text.into())
                         },

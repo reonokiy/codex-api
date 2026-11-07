@@ -467,7 +467,7 @@ async fn respond(
             loop {
                 match tokio::time::timeout_at(deadline, running.events.recv()).await {
                     Ok(Some(mut event)) => {
-                        usage.observe(&event.value);
+                        usage.observe_at(&event.value, event.received_at);
                         if aggregate_output && accumulator.observe(&mut event.value) {
                             event.bytes = Bytes::from(format!("event: {}\ndata: {}\n\n",event.value["type"].as_str().unwrap_or("message"),event.value));
                         }
@@ -520,7 +520,7 @@ async fn respond(
                     usage.failure("upstream_error");
                     GatewayError::internal("upstream closed without terminal response")
                 })?;
-            usage.observe(&event.value);
+            usage.observe_at(&event.value, event.received_at);
             if aggregate_output {
                 accumulator.observe(&mut event.value);
             }
