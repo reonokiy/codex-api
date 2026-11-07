@@ -41,6 +41,13 @@ The request size limit defaults to 64 MiB. Override it with `CODEX_GATEWAY_MAX_R
 (pass it with Docker `-e`) or add `--max-request-bytes 67108864` to the executable
 arguments. See [request limits](docs/common.md).
 
+By default, only basic inference endpoints are exposed. Account, history,
+workspace, auth, file storage, Realtime and arbitrary proxy routes return 403.
+To enable the full API, pass `--restricted-api` or set
+`CODEX_GATEWAY_RESTRICTED_API=true`
+(Docker: `-e CODEX_GATEWAY_RESTRICTED_API=true`). See the
+[allowed endpoints and account API audit](docs/restricted-api.md).
+
 ## Use
 
 Generate text with the official OpenAI Python SDK:

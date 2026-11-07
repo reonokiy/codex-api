@@ -18,6 +18,11 @@ The gateway uses Codex **0.162.1** and retains the native route inventory audite
 
 ## Credentials
 
+By default, only the [inference allowlist](restricted-api.md) is accessible.
+Other native routes, including generic proxy paths and account APIs, return
+403 before forwarding. Pass `--restricted-api` or set
+`CODEX_GATEWAY_RESTRICTED_API=true` to enable them.
+
 Subscription routes use the gateway's Codex credentials. Send `Authorization: Bearer <gateway-key>`. The gateway removes caller authorization, account ID and actor-auth headers, then adds the original subscription identity. Subscription authorization is refreshed through Codex's auth manager.
 
 Platform, API-key turn costs, personal-token identity, OAuth browser authorization, and remote-control server/pairing routes need their own upstream credentials:
