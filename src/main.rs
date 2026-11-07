@@ -23,6 +23,11 @@ struct Args {
     /// Maximum HTTP body, decoded zstd body, and WebSocket message/frame size in bytes.
     #[arg(long, env = "CODEX_GATEWAY_MAX_REQUEST_BYTES", default_value_t = 64 * 1024 * 1024, value_parser = parse_request_bytes)]
     max_request_bytes: usize,
+    /// Allow restricted account, stored-data, and proxy APIs (disabled by default).
+    #[arg(long, env = "CODEX_GATEWAY_RESTRICTED_API", action = clap::ArgAction::Set,
+        num_args = 0..=1, require_equals = true, default_missing_value = "true",
+        default_value_t = false)]
+    restricted_api: bool,
 }
 fn parse_request_bytes(value: &str) -> Result<usize, String> {
     let bytes = value.parse::<usize>().map_err(|e| e.to_string())?;
@@ -71,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
     let telemetry =
         tokio::task::spawn_blocking(codex_api_gateway::telemetry::Telemetry::from_env).await??;
     let gateway = Gateway {
+        allow_restricted_api: args.restricted_api,
         telemetry: telemetry.clone(),
         backend,
         models,
@@ -83,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
         transfers,
     };
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
-    tracing::info!(listen=%listener.local_addr()?, "Codex Responses gateway ready");
+    tracing::info!(listen=%listener.local_addr()?, allow_restricted_api=args.restricted_api, "Codex Responses gateway ready");
     axum::serve(listener, router(gateway))
         .with_graceful_shutdown(async {
             #[cfg(unix)]
@@ -106,6 +112,34 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn full_api_is_opt_in() {
+        // Inspect the CLI definition so an inherited environment cannot change
+        // the assertion about the default, or mask a missing flag.
+        use clap::CommandFactory;
+        let command = Args::command();
+        let argument = command
+            .get_arguments()
+            .find(|arg| arg.get_id() == "restricted_api")
+            .unwrap();
+        assert_eq!(argument.get_long(), Some("restricted-api"));
+        assert_eq!(
+            argument.get_env(),
+            Some(std::ffi::OsStr::new("CODEX_GATEWAY_RESTRICTED_API"))
+        );
+        let defaults = command
+            .mut_arg("restricted_api", |arg| arg.env(None::<&str>))
+            .try_get_matches_from(["gateway"])
+            .unwrap();
+        assert!(!defaults.get_flag("restricted_api"));
+        for flag in ["--restricted-api", "--restricted-api=true"] {
+            let args = Args::try_parse_from(["gateway", flag]).unwrap();
+            assert!(args.restricted_api);
+        }
+        let args = Args::try_parse_from(["gateway", "--restricted-api=false"]).unwrap();
+        assert!(!args.restricted_api);
+    }
 
     #[test]
     fn request_limit_defaults_to_64_mib() {

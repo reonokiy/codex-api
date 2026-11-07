@@ -4,6 +4,7 @@ use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Query, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -14,6 +15,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 
 pub struct Gateway {
+    pub allow_restricted_api: bool,
     pub backend: Backend,
     pub models: Vec<ModelInfo>,
     pub key: Option<String>,
@@ -25,6 +27,8 @@ pub struct Gateway {
 }
 
 pub fn router(gateway: Gateway) -> Router {
+    let max_request_bytes = gateway.max_request_bytes;
+    let gateway = Arc::new(gateway);
     Router::new()
         .route(
             "/healthz",
@@ -72,8 +76,58 @@ pub fn router(gateway: Gateway) -> Router {
         .route("/v1/live/sessions/{session_id}/attach", get(crate::realtime::upgrade))
         .route("/transfers/{handle}", axum::routing::any(transfer))
         .fallback(crate::native::handle)
-        .layer(DefaultBodyLimit::max(gateway.max_request_bytes))
-        .with_state(Arc::new(gateway))
+        .layer(DefaultBodyLimit::max(max_request_bytes))
+        .layer(middleware::from_fn_with_state(gateway.clone(), restricted_api_policy))
+        .with_state(gateway)
+}
+
+// Match complete paths and methods, including native aliases. New routes and
+// arbitrary proxy paths stay closed until explicitly reviewed for this mode.
+fn is_allowed_restricted_api(method: &http::Method, path: &str) -> bool {
+    use http::Method;
+    match path {
+        "/healthz" | "/v1/models" | "/codex/models" | "/backend-api/codex/models" => {
+            method == Method::GET || method == Method::HEAD
+        }
+        "/v1/responses" | "/codex/responses" | "/backend-api/codex/responses" => {
+            method == Method::POST || method == Method::GET
+        }
+        "/v1/responses/compact"
+        | "/codex/responses/compact"
+        | "/backend-api/codex/responses/compact"
+        | "/v1/images/generations"
+        | "/v1/images/edits"
+        | "/codex/images/generations"
+        | "/codex/images/edits"
+        | "/backend-api/codex/images/generations"
+        | "/backend-api/codex/images/edits"
+        | "/v1/alpha/search"
+        | "/codex/alpha/search"
+        | "/backend-api/codex/alpha/search"
+        | "/v1/audio/transcriptions"
+        | "/transcribe"
+        | "/backend-api/transcribe" => method == Method::POST,
+        _ => false,
+    }
+}
+
+async fn restricted_api_policy(
+    State(gateway): State<Arc<Gateway>>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Result<Response, GatewayError> {
+    if !gateway.allow_restricted_api
+        && !is_allowed_restricted_api(request.method(), request.uri().path())
+    {
+        authorize(&gateway, request.headers())?;
+        return Err(GatewayError {
+            upstream_response: None,
+            status: StatusCode::FORBIDDEN,
+            code: "endpoint_disabled",
+            message: "endpoint disabled; enable full API access with --restricted-api".into(),
+        });
+    }
+    Ok(next.run(request).await)
 }
 async fn transfer(
     State(gateway): State<Arc<Gateway>>,

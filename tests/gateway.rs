@@ -2,6 +2,8 @@
 mod file_cases;
 #[path = "cases/native.rs"]
 mod native_cases;
+#[path = "cases/restricted_api.rs"]
+mod restricted_api_cases;
 mod support;
 use axum::{
     Router,
@@ -223,6 +225,28 @@ impl Harness {
         transfers: bool,
         max_request_bytes: usize,
     ) -> Self {
+        Self::with_api_policy(
+            events,
+            status,
+            hang,
+            timeout,
+            login,
+            transfers,
+            max_request_bytes,
+            true,
+        )
+        .await
+    }
+    async fn with_api_policy(
+        events: Vec<Value>,
+        status: StatusCode,
+        hang: bool,
+        timeout: Duration,
+        login: CodexAuth,
+        transfers: bool,
+        max_request_bytes: usize,
+        allow_restricted_api: bool,
+    ) -> Self {
         let subscription = login.is_chatgpt_auth();
         let fake = Fake {
             received: Default::default(),
@@ -326,6 +350,7 @@ impl Harness {
                 .unwrap()
         });
         let app = router(Gateway {
+            allow_restricted_api,
             max_request_bytes,
             telemetry: None,
             backend,

@@ -65,6 +65,7 @@ Gateway errors use this shape; `message` describes the failure:
 | --- | --- |
 | 400 | Invalid or unsupported request |
 | 401 | Missing/wrong gateway key or unavailable subscription credentials |
+| 403 | Endpoint disabled by [restricted-api mode](restricted-api.md) |
 | 404 | Unknown endpoint |
 | 413 | Request size limit exceeded; some JSON extractor failures use 400 |
 | 415 | Unsupported media type or native content encoding |
