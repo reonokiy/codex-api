@@ -18,11 +18,12 @@ use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 struct Key(String);
 impl codex_api::AuthProvider for Key {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
         headers.insert(
             "authorization",
             format!("Bearer {}", self.0).parse().unwrap(),
         );
+        Ok(())
     }
 }
 

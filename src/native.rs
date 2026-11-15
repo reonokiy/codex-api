@@ -244,7 +244,10 @@ pub async fn handle(
         }
         let (socket, upstream) = tokio::time::timeout(gateway.timeout, async {
             let (provider, auth) = gateway.backend.proxy_config(origin, auth).await?;
-            auth.add_auth_headers(&mut upstream_headers);
+            upstream_headers = auth
+                .apply_auth_headers(upstream_headers)
+                .await
+                .map_err(GatewayError::internal)?;
             let url = provider.url_for_path(&path);
             let defaults = if matches!(origin, Origin::Codex | Origin::ChatGpt) {
                 codex_login::default_client::default_headers()

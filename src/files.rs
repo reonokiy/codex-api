@@ -131,6 +131,7 @@ pub async fn create(
 
 fn file_error(error: OpenAiFileError) -> GatewayError {
     match error {
+        OpenAiFileError::Auth(error) => GatewayError::internal(error),
         OpenAiFileError::ReadContents(_) => {
             GatewayError::internal("could not reopen upload contents")
         }

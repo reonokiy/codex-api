@@ -240,6 +240,7 @@ impl Harness {
         )
         .await
     }
+    #[allow(clippy::too_many_arguments)] // Test fixture exposes independent gateway settings.
     async fn with_api_policy(
         events: Vec<Value>,
         status: StatusCode,
@@ -958,8 +959,9 @@ async fn original_codex_client_can_consume_gateway_native_endpoint() {
     use futures::StreamExt;
     struct Key;
     impl codex_api::AuthProvider for Key {
-        fn add_auth_headers(&self, headers: &mut HeaderMap) {
+        fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
             headers.insert("authorization", "Bearer client-key".parse().unwrap());
+            Ok(())
         }
     }
     let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(5)).await;
@@ -1023,11 +1025,12 @@ fn ws_provider(base_url: String) -> codex_api::Provider {
 }
 struct TestKey(&'static str);
 impl codex_api::AuthProvider for TestKey {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
         headers.insert(
             "authorization",
             format!("Bearer {}", self.0).parse().unwrap(),
         );
+        Ok(())
     }
 }
 

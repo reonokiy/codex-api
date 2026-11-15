@@ -1,6 +1,6 @@
-// Copied from Codex 0.162.1 core/context/base_instructions.rs; Apache-2.0.
+// Adapted from Codex 0.169.0 core/context/base_instructions.rs; Apache-2.0.
 use codex_context_fragments::ContextualUserFragment;
-use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::{ContentItem, ContentItemKind, input_text};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BaseInstructionsFragment(pub(crate) String);
@@ -22,7 +22,7 @@ impl ContextualUserFragment for BaseInstructionsFragment {
         ("", "")
     }
 
-    fn body(&self) -> String {
-        self.0.clone()
+    fn body(&self) -> ContentItem {
+        input_text(self.0.clone())
     }
 }
