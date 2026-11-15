@@ -8,7 +8,7 @@
  pub(crate) mod realtime_call;
  pub(crate) mod realtime_websocket;
  pub(crate) mod responses;
-@@ -12,11 +13,13 @@
+@@ -13,11 +14,13 @@
  pub use images::ImagesClient;
  pub use memories::MemoriesClient;
  pub use models::ModelsClient;
@@ -75,16 +75,16 @@
 +}
 --- a/src/endpoint/realtime_websocket/methods.rs
 +++ b/src/endpoint/realtime_websocket/methods.rs
-@@ -63,6 +63,8 @@
+@@ -65,6 +65,8 @@
+ const REALTIME_WIRE_LOG_TARGET: &str = "codex_api::realtime_websocket::wire";
+ mod sideband;
  const OPENAI_REALTIME_API_BASE_URL: &str = "https://api.openai.com/v1";
- const MAX_ACTIVE_TRANSCRIPT_BYTES: usize = 8 * 1024;
- const TRUNCATED_TRANSCRIPT_PREFIX: &str = "…";
 +
 +pub type RealtimeRawWebsocketConnection = WebSocketConnection;
  
  struct WsStream {
      tx_command: mpsc::Sender<WsCommand>,
-@@ -857,6 +859,39 @@
+@@ -919,6 +921,39 @@
          self
      }
  
@@ -124,7 +124,7 @@
      pub async fn connect(
          &self,
          config: RealtimeSessionConfig,
-@@ -1028,17 +1063,83 @@
+@@ -1090,17 +1125,83 @@
          session_initialization: RealtimeSessionInitialization,
          transcript_state: RealtimeTranscriptState,
      ) -> Result<RealtimeWebsocketConnection, ApiError> {
@@ -211,9 +211,9 @@
 -        );
 +        let headers = merge_request_headers(&self.provider.headers, extra_headers, default_headers);
          request.headers_mut().extend(headers);
- 
-         info!("connecting realtime websocket: {ws_url}");
-@@ -1066,52 +1167,30 @@
+         if let Some(auth) = &self.auth {
+             let headers = std::mem::take(request.headers_mut());
+@@ -1132,52 +1233,30 @@
          let (stream, response) = connector
              .connect(request, websocket_config())
              .await
@@ -319,7 +319,7 @@
          body: EncodedJsonBody,
 --- a/src/endpoint/responses_websocket.rs
 +++ b/src/endpoint/responses_websocket.rs
-@@ -407,6 +407,52 @@
+@@ -484,6 +484,52 @@
          .await
      }
  
@@ -363,7 +363,7 @@
 +        }
 +        let mut headers =
 +            merge_request_headers(&self.provider.headers, extra_headers, default_headers);
-+        self.auth.add_auth_headers(&mut headers);
++        headers = self.auth.apply_auth_headers(headers).await?;
 +        let connector = WebSocketConnector::new(http_client_factory)
 +            .map_err(|err| ApiError::Stream(format!("failed to configure websocket TLS: {err}")))?;
 +        connect_websocket_raw(url, headers, &connector).await
@@ -372,35 +372,7 @@
      /// Opens a WebSocket connection long enough to validate the upgrade response.
      ///
      /// The probe uses the same URL construction, headers, authentication, TLS,
-@@ -492,26 +538,7 @@
-     connector: &WebSocketConnector,
-     turn_state: Option<Arc<OnceLock<String>>>,
- ) -> Result<(WsStream, StatusCode, bool, Option<String>), ApiError> {
--    info!("connecting to websocket: {url}");
--
--    let mut request = url
--        .as_str()
--        .into_client_request()
--        .map_err(|err| ApiError::Stream(format!("failed to build websocket request: {err}")))?;
--    request.headers_mut().extend(headers);
--
--    let response = connector.connect(request, websocket_config()).await;
--
--    let (stream, response) = match response {
--        Ok((stream, response)) => {
--            info!("successfully connected to websocket: {url}");
--            (stream, response)
--        }
--        Err(err) => {
--            error!("failed to connect to websocket: {err}, url: {url}");
--            return Err(map_ws_error(err, &url));
--        }
--    };
-+    let (stream, response) = connect_websocket_raw(url, headers, connector).await?;
- 
-     let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
-     let server_model = response
-@@ -533,6 +560,35 @@
+@@ -668,6 +714,35 @@
          reasoning_included,
          server_model,
      ))
@@ -438,7 +410,7 @@
  fn websocket_config() -> WebSocketConfig {
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -54,11 +54,13 @@
+@@ -61,11 +61,13 @@
  pub use crate::endpoint::ImagesClient;
  pub use crate::endpoint::MemoriesClient;
  pub use crate::endpoint::ModelsClient;
@@ -452,11 +424,11 @@
  pub use crate::endpoint::RealtimeSessionConfig;
  pub use crate::endpoint::RealtimeSessionMode;
  pub use crate::endpoint::RealtimeTranscriptState;
-@@ -77,6 +79,7 @@
+@@ -86,6 +88,7 @@
  pub use crate::error::ApiError;
  pub use crate::files::HostedFileUploadContext;
  pub use crate::files::OPENAI_FILE_UPLOAD_LIMIT_BYTES;
 +pub use crate::files::OpenAiFileError;
  pub use crate::files::upload_openai_file;
- pub use crate::images::ImageBackground;
- pub use crate::images::ImageData;
+ pub use crate::guardian_assessment::GuardianAssessment;
+ pub use crate::images::GifOptions;

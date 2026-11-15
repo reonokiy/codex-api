@@ -104,6 +104,7 @@ impl Input {
                 quality,
                 size,
                 n: self.n,
+                output: None,
             }))
         } else {
             if self.images.is_some() {
@@ -118,6 +119,7 @@ impl Input {
                 quality,
                 size,
                 n: self.n,
+                output: None,
             }))
         }
     }

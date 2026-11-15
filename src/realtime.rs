@@ -287,7 +287,10 @@ impl Backend {
             }
             let mut headers = headers.clone();
             // Native sidebands reuse call-creation auth, including the ChatGPT account id.
-            api_auth.add_auth_headers(&mut headers);
+            headers = api_auth
+                .apply_auth_headers(headers)
+                .await
+                .map_err(GatewayError::internal)?;
             let client = RealtimeWebsocketClient::new(provider, self.factory.clone());
             match client
                 .connect_raw(

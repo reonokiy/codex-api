@@ -47,8 +47,9 @@ fn config() -> RealtimeSessionConfig {
 
 struct Auth;
 impl AuthProvider for Auth {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
         headers.insert("authorization", HeaderValue::from_static("Bearer upstream"));
+        Ok(())
     }
 }
 

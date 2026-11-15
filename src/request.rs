@@ -248,7 +248,7 @@ impl CreateResponse {
                         ),
                     )),
                     role: "developer".into(),
-                    tools,
+                    tools: tools.into(),
                 });
             }
             None
@@ -294,6 +294,7 @@ impl CreateResponse {
             text,
             client_metadata: Some(HashMap::new()),
             access_programs: None,
+            prompt_cache_options: None,
         })
     }
 }

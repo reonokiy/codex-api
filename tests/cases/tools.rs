@@ -69,6 +69,7 @@ async fn images_match_original_client_and_preserve_complete_responses() {
         quality: Some(codex_api::ImageQuality::Auto),
         size: Some("auto".into()),
         n: None,
+        output: None,
     };
     let edit = codex_api::ImageEditRequest {
         images: vec![codex_protocol::models::ImageReference::Inline {
@@ -80,6 +81,7 @@ async fn images_match_original_client_and_preserve_complete_responses() {
         quality: generation.quality,
         size: generation.size.clone(),
         n: None,
+        output: None,
     };
     let mut direct_headers = HeaderMap::new();
     direct_headers.insert("chatgpt-account-id", "account_id".parse().unwrap());
