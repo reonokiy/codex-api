@@ -187,6 +187,12 @@ impl Telemetry {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum HttpResponseMode {
+    Sse,
+    Buffered,
+}
+
 /// Measures HTTP handling independently of inference, including rejected requests.
 pub(crate) struct HttpRequestGuard {
     telemetry: Arc<Telemetry>,
@@ -197,6 +203,7 @@ pub(crate) struct HttpRequestGuard {
     method: String,
     route: String,
     status: Option<u16>,
+    response_mode: Option<&'static str>,
     ttfb: Option<Duration>,
     exported: bool,
 }
@@ -223,6 +230,7 @@ impl HttpRequestGuard {
                 .map(|path| path.as_str().to_owned())
                 .unwrap_or_else(|| "unmatched".into()),
             status: None,
+            response_mode: None,
             ttfb: None,
             exported: false,
         }
@@ -232,6 +240,14 @@ impl HttpRequestGuard {
         use axum::body::HttpBody;
         self.ttfb = Some(self.clock.elapsed());
         self.status = Some(response.status().as_u16());
+        self.response_mode =
+            response
+                .extensions()
+                .get::<HttpResponseMode>()
+                .map(|mode| match mode {
+                    HttpResponseMode::Sse => "sse",
+                    HttpResponseMode::Buffered => "buffered",
+                });
         if response.status() == http::StatusCode::SWITCHING_PROTOCOLS {
             // The upgraded socket outlives this HTTP body.
             self.finish("upgraded");
@@ -269,6 +285,9 @@ impl HttpRequestGuard {
                 "http.response.status_code",
                 i64::from(status),
             ));
+        }
+        if let Some(mode) = self.response_mode {
+            attributes.push(KeyValue::new("codex_api.http.response_mode", mode));
         }
         telemetry
             .http_duration
@@ -314,6 +333,9 @@ impl HttpRequestGuard {
         });
         if let Some(ttfb) = self.ttfb {
             body["ttfb_ms"] = json!(ttfb.as_secs_f64() * 1000.);
+        }
+        if let Some(mode) = self.response_mode {
+            body["response_mode"] = json!(mode);
         }
         let logger = telemetry.logs.logger("codex-api.http");
         let mut log = logger.create_log_record();

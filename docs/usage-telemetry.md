@@ -51,7 +51,7 @@ keep the existing model/operation/transport/status dimensions; user, key,
 request and response IDs remain confined to logs and traces.
 
 The clock starts when a validated HTTP inference enters the execution path,
-before concurrency acquisition and upstream setup/retries. For WebSocket it
+before the concurrency check and upstream setup/retries. For WebSocket it
 starts separately for each generating `response.create`, after request parsing
 and before forwarding. HTTP body upload, validation and WebSocket handshake
 time are excluded.
@@ -119,7 +119,7 @@ The HTTP request ID identifies that HTTP record and span; it is independent of
 inference usage IDs. Supplied W3C trace context is honored for both.
 
 The clock starts at the outer request middleware, before authorization,
-body reading/decompression, validation, concurrency waiting and upstream
+body reading/decompression, validation, the concurrency check and upstream
 setup/retries. It excludes time before the HTTP server dispatches the request
 (connection acceptance, TLS and header parsing). TTFB ends when the application
 has the response headers ready, including for an SSE stream that has not
@@ -145,9 +145,20 @@ lifetime is excluded. WebSocket inference continues to use per-turn TTFT/TPS.
 
 Histogram dimensions are limited to method (unknown methods use `_OTHER`),
 matched route template (fallback paths use `unmatched`), HTTP status when known,
-and outcome. Raw paths, query strings, user/key/request IDs and response content
-are never metric dimensions. HTTP telemetry does not add synthetic token
-measurements to endpoints without upstream usage.
+and outcome. HTTP Responses that reach the inference response path also carry
+the `codex_api.http.response_mode` attribute (`sse` or `buffered`) and the
+`response_mode` JSON log field. Raw paths, query strings, user/key/request IDs
+and response content are never metric dimensions. HTTP telemetry does not add
+synthetic token measurements to endpoints without upstream usage.
+
+Compare TTFB percentiles for `sse` and `buffered` separately. A buffered
+response waits for the terminal event before its headers can be sent. For SSE,
+the gateway returns headers once upstream accepts the request and forwards
+events as they arrive. Low SSE TTFB with high proxy-observed TTFT points to
+the interval before the first content delta, which can include upstream
+queuing, prompt processing and reasoning. If gateway timings are low but
+the client is slow, compare the same streaming request directly against the
+gateway and through its ingress to locate buffering or delivery delays.
 
 The Talos configuration routes OTLP through Alloy to Mimir, Tempo and Loki.
 The provisioned `codex-api-usage` Grafana dashboard uses Loki usage events for

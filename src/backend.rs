@@ -6,17 +6,23 @@ use codex_api::{
     ApiError, Compression, ReqwestTransport, ResponsesApiRequest, ResponsesClient, ResponsesOptions,
 };
 use codex_http_client::{ClientRouteClass, HttpClientFactory};
-use codex_login::{AuthManager, default_client::create_client_for_route};
+use codex_login::{
+    AuthManager,
+    default_client::{
+        ClientRedirectPolicy, create_client_for_route, create_transport_for_routes_async,
+    },
+};
 use codex_model_provider::SharedModelProvider;
 use codex_protocol::protocol::SessionSource;
 use futures::StreamExt;
 use std::sync::{Arc, OnceLock};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OnceCell, mpsc, oneshot};
 
 pub struct Backend {
     pub provider: SharedModelProvider,
     pub auth: Arc<AuthManager>,
     pub factory: HttpClientFactory,
+    pub api_transport: OnceCell<ReqwestTransport>,
     pub chatgpt_base_url: String,
     pub platform_base_url: String,
     pub auth_base_url: String,
@@ -38,6 +44,19 @@ impl Drop for RunningResponse {
 }
 
 impl Backend {
+    async fn api_transport(&self) -> Result<&ReqwestTransport, GatewayError> {
+        self.api_transport
+            .get_or_try_init(|| {
+                create_transport_for_routes_async(
+                    self.factory.clone(),
+                    ClientRouteClass::Api,
+                    ClientRedirectPolicy::Default,
+                )
+            })
+            .await
+            .map_err(GatewayError::internal)
+    }
+
     pub async fn start(
         &self,
         request: ResponsesApiRequest,
@@ -182,22 +201,12 @@ impl Backend {
                 .await
                 .map_err(GatewayError::internal)?
                 .auth;
+            let transport = self.api_transport().await?;
             if *changes.borrow() != revision {
                 continue;
             }
             let url = codex_api::ModelsClient::<ReqwestTransport>::request_url(&resolved, version);
-            let http = create_client_for_route(
-                &self.factory,
-                &url,
-                ClientRouteClass::Api,
-                codex_login::default_client::ClientRedirectPolicy::Default,
-            )
-            .map_err(GatewayError::internal)?;
-            let client = codex_api::ModelsClient::new(
-                ReqwestTransport::from_http_client(http),
-                resolved,
-                api_auth,
-            );
+            let client = codex_api::ModelsClient::new(transport.clone(), resolved, api_auth);
             match client
                 .list_models_raw(url, headers.clone(), Some(16 * 1024 * 1024))
                 .await
@@ -336,21 +345,16 @@ impl Backend {
                 .await
                 .map_err(GatewayError::internal)?
                 .auth;
+            // Share connection pools across requests while resolving credentials per attempt.
+            let http = self.api_transport().await?;
             if *auth_changes.borrow() != revision {
                 continue;
             }
-            let http = create_client_for_route(
-                &self.factory,
-                &resolved.url_for_path("/responses"),
-                ClientRouteClass::Api,
-                codex_login::default_client::ClientRedirectPolicy::Default,
-            )
-            .map_err(GatewayError::internal)?;
             let (sender, receiver) = mpsc::channel(8);
             let response_headers = Arc::new(OnceLock::new());
             let transport = TapTransport {
                 response_headers: response_headers.clone(),
-                inner: ReqwestTransport::from_http_client(http),
+                inner: http.clone(),
                 sender,
             };
             let client = ResponsesClient::new(transport, resolved, api_auth);

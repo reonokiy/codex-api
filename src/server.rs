@@ -519,6 +519,9 @@ async fn respond(
         response
             .headers_mut()
             .insert("x-accel-buffering", "no".parse().unwrap());
+        response
+            .extensions_mut()
+            .insert(crate::telemetry::HttpResponseMode::Sse);
         Ok(response)
     } else {
         let _permit = permit;
@@ -562,7 +565,11 @@ async fn respond(
             .get("response")
             .filter(|v| v.is_object())
             .ok_or_else(|| GatewayError::internal("terminal response missing object"))?;
-        Ok(Json(response.clone()).into_response())
+        let mut response = Json(response.clone()).into_response();
+        response
+            .extensions_mut()
+            .insert(crate::telemetry::HttpResponseMode::Buffered);
+        Ok(response)
     }
 }
 pub(crate) fn timeout_error() -> GatewayError {

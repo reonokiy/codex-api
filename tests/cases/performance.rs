@@ -9,6 +9,42 @@ use opentelemetry_sdk::{
 use std::collections::HashMap;
 
 #[tokio::test]
+async fn responses_reuse_upstream_connection_and_send_headers_before_events() {
+    let h = Harness::new(events(), StatusCode::OK, false, Duration::from_secs(10)).await;
+    let client = reqwest::Client::new();
+    let models = client
+        .get(format!("{}/codex/models", h.url))
+        .bearer_auth("client-key")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(models.status(), StatusCode::OK);
+    models.bytes().await.unwrap();
+
+    for path in ["/v1/responses", "/codex/responses"] {
+        let (release, gate) = tokio::sync::oneshot::channel();
+        *h.fake.http_event_gate.lock().unwrap() = Some(gate);
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            client
+                .post(format!("{}{path}", h.url))
+                .bearer_auth("client-key")
+                .json(&json!({"model":h.model,"input":"hello","stream":true}))
+                .send(),
+        )
+        .await
+        .expect("response headers must arrive while upstream events are held")
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-type"], "text/event-stream");
+        release.send(()).unwrap();
+        let events = parse_sse(&response.text().await.unwrap());
+        assert_eq!(events.last().unwrap()["type"], "response.completed");
+    }
+    assert_eq!(h.capture.connection_count(), 1);
+}
+
+#[tokio::test]
 async fn http_timings_include_body_upload_rejections_and_head() {
     let logs = InMemoryLogExporter::default();
     let telemetry = Arc::new(Telemetry::new(
@@ -101,6 +137,7 @@ async fn http_timings_include_body_upload_rejections_and_head() {
         .collect();
     assert_eq!(bodies.len(), 6);
     assert!(bodies[0]["ttfb_ms"].as_f64().unwrap() >= 100.);
+    assert_eq!(bodies[0]["response_mode"], "buffered");
     assert!(bodies.iter().all(|body| {
         body["outcome"] == "completed"
             && body["total_duration_ms"].as_f64().unwrap() >= body["ttfb_ms"].as_f64().unwrap()
@@ -200,6 +237,7 @@ async fn inference_timings_reach_exporters_for_http_sse_and_websocket_aliases() 
     let records = logs.get_emitted_logs().unwrap();
     assert_eq!(records.len(), 14);
     let mut transports = HashMap::new();
+    let mut response_modes = HashMap::new();
     let mut http_count = 0;
     for record in &records {
         let Some(AnyValue::String(body)) = record.record.body() else {
@@ -213,10 +251,14 @@ async fn inference_timings_reach_exporters_for_http_sse_and_websocket_aliases() 
             if body["status_code"] == 101 {
                 assert_eq!(body["method"], "GET");
                 assert_eq!(body["outcome"], "upgraded");
+                assert!(body.get("response_mode").is_none());
             } else {
                 assert_eq!(body["method"], "POST");
                 assert_eq!(body["status_code"], 200);
                 assert_eq!(body["outcome"], "completed");
+                *response_modes
+                    .entry(body["response_mode"].as_str().unwrap().to_owned())
+                    .or_insert(0) += 1;
             }
             http_count += 1;
             continue;
@@ -235,5 +277,9 @@ async fn inference_timings_reach_exporters_for_http_sse_and_websocket_aliases() 
     assert_eq!(transports["http"], 4);
     assert_eq!(transports["websocket"], 3);
     assert_eq!(http_count, 7);
+    assert_eq!(
+        response_modes,
+        HashMap::from([("buffered".into(), 1), ("sse".into(), 3)])
+    );
     assert_eq!(spans.get_finished_spans().unwrap().len(), 14);
 }

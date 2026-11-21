@@ -1,4 +1,5 @@
 use anyhow::{Context, bail};
+use axum::serve::ListenerExt;
 use clap::Parser;
 use codex_api_gateway::{
     server::{Gateway, router},
@@ -90,6 +91,11 @@ async fn main() -> anyhow::Result<()> {
     };
     let listener = tokio::net::TcpListener::bind(args.listen).await?;
     tracing::info!(listen=%listener.local_addr()?, allow_restricted_api=args.restricted_api, "Codex Responses gateway ready");
+    let listener = listener.tap_io(|socket| {
+        if let Err(error) = socket.set_nodelay(true) {
+            tracing::debug!(%error, "Could not enable TCP_NODELAY on accepted socket");
+        }
+    });
     axum::serve(listener, router(gateway))
         .with_graceful_shutdown(async {
             #[cfg(unix)]
