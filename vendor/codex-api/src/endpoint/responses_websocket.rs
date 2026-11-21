@@ -42,11 +42,13 @@ use tokio::sync::oneshot;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::Utf8Bytes;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::handshake::client::Response;
 use tokio_tungstenite::tungstenite::protocol::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::Fragment;
 use tokio_tungstenite::tungstenite::protocol::frame::Frame;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::Data;
 use tracing::Instrument;
 use tracing::Span;
@@ -60,6 +62,7 @@ use tungstenite::protocol::WebSocketConfig;
 use url::Url;
 
 struct WsStream {
+    max_message_bytes: Option<usize>,
     routing_affinity: Option<codex_http_client::ChatGptRoutingAffinity>,
     tx_command: mpsc::Sender<WsCommand>,
     rx_message: mpsc::UnboundedReceiver<Result<Message, WsError>>,
@@ -104,7 +107,7 @@ async fn send_message(
 }
 
 impl WsStream {
-    fn new(inner: WebSocketConnection) -> Self {
+    fn new(inner: WebSocketConnection, max_message_bytes: Option<usize>) -> Self {
         let routing_affinity = inner.routing_affinity().cloned();
         let (tx_command, mut rx_command) = mpsc::channel::<WsCommand>(32);
         let (tx_message, rx_message) = mpsc::unbounded_channel::<Result<Message, WsError>>();
@@ -163,6 +166,7 @@ impl WsStream {
         });
 
         Self {
+            max_message_bytes,
             routing_affinity,
             tx_command,
             rx_message,
@@ -203,6 +207,7 @@ impl Drop for WsStream {
 }
 
 const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
+const X_CODEX_WEBSOCKET_MAX_MESSAGE_BYTES_HEADER: &str = "x-codex-websocket-max-message-bytes";
 const X_MODELS_ETAG_HEADER: &str = "x-models-etag";
 const X_REASONING_INCLUDED_HEADER: &str = "x-reasoning-included";
 const OPENAI_MODEL_HEADER: &str = "openai-model";
@@ -279,17 +284,29 @@ impl ResponsesWebsocketConnection {
             .is_none_or(|stream| stream.pump_task.is_finished())
     }
 
+    pub async fn stream_request(
+        &self,
+        request: ResponsesWsRequest<'_>,
+        connection_reused: bool,
+        turn_state: Option<Arc<OnceLock<String>>>,
+    ) -> Result<ResponseStream, ApiError> {
+        self.stream_request_with_observer(request, connection_reused, turn_state, |_| {})
+            .await
+    }
+
+    /// Gives the observer a shared copy of the exact JSON before transport dispatch.
     #[instrument(
         name = "responses_websocket.stream_request",
         level = "info",
         skip_all,
         fields(transport = "responses_websocket", api.path = "/responses")
     )]
-    pub async fn stream_request(
+    pub async fn stream_request_with_observer(
         &self,
         request: ResponsesWsRequest<'_>,
         connection_reused: bool,
         turn_state: Option<Arc<OnceLock<String>>>,
+        on_encoded: impl FnOnce(&bytes::Bytes),
     ) -> Result<ResponseStream, ApiError> {
         let (tx_event, rx_event) =
             mpsc::channel::<std::result::Result<ResponseEvent, ApiError>>(1600);
@@ -324,7 +341,8 @@ impl ResponsesWebsocketConnection {
             warmup: ws_request.generate == Some(false),
             connection_reused,
         };
-        let request_text = serialize_websocket_request(&request)?;
+        let request_text = Utf8Bytes::from(serialize_websocket_request(&request)?);
+        on_encoded(request_text.as_ref());
 
         let current_span = Span::current();
         tokio::spawn(
@@ -694,6 +712,11 @@ async fn connect_websocket(
         }
     };
 
+    let max_message_bytes = response
+        .headers()
+        .get(X_CODEX_WEBSOCKET_MAX_MESSAGE_BYTES_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok());
     let reasoning_included = response.headers().contains_key(X_REASONING_INCLUDED_HEADER);
     let server_model = response
         .headers()
@@ -709,7 +732,7 @@ async fn connect_websocket(
         let _ = turn_state.set(header_value.to_string());
     }
     Ok((
-        WsStream::new(stream),
+        WsStream::new(stream, max_message_bytes),
         response,
         reasoning_included,
         server_model,
@@ -893,7 +916,7 @@ fn is_websocket_receive_failure(
 async fn run_websocket_response_stream(
     ws_stream: &mut WsStream,
     tx_event: mpsc::Sender<std::result::Result<ResponseEvent, ApiError>>,
-    request_text: String,
+    request_text: Utf8Bytes,
     idle_timeout: Duration,
     telemetry: Option<Arc<dyn WebsocketTelemetry>>,
     turn_state: Option<&OnceLock<String>>,
@@ -923,6 +946,7 @@ async fn run_websocket_response_stream(
     let mut interrupt_request = interrupt.clone().fuse();
     let mut interruption = None;
     let mut response_id = None;
+    let mut received_text = false;
     let mut awaiting_interrupt_ack = false;
     loop {
         let poll_start = Instant::now();
@@ -938,7 +962,7 @@ async fn run_websocket_response_stream(
                         "type": "response.interrupt",
                         "response_id": response_id,
                         "mode": "discard_partial_items",
-                    }).to_string(),
+                    }).to_string().into(),
                     idle_timeout,
                     /*telemetry*/ None,
                     timing_log_context.connection_reused,
@@ -971,6 +995,7 @@ async fn run_websocket_response_stream(
 
         match message {
             Message::Text(text) => {
+                received_text = true;
                 let event = serde_json::from_str::<ResponsesStreamEvent>(&text);
                 let kind = event.as_ref().ok().map(ResponsesStreamEvent::kind);
                 if let Some(t) = telemetry.as_ref() {
@@ -1108,6 +1133,9 @@ async fn run_websocket_response_stream(
             Message::Binary(_) => {
                 return Err(ApiError::Stream("unexpected binary websocket event".into()));
             }
+            Message::Close(Some(frame)) if frame.code == CloseCode::Size && !received_text => {
+                return Err(ApiError::WebsocketMessageTooLarge);
+            }
             Message::Close(_) => {
                 return Err(ApiError::Stream(
                     "websocket closed by server before response.completed".into(),
@@ -1165,19 +1193,22 @@ fn safety_buffering_for_event(
 
 async fn send_websocket_request(
     ws_stream: &mut WsStream,
-    request_text: String,
+    request_text: Utf8Bytes,
     idle_timeout: Duration,
     telemetry: Option<&Arc<dyn WebsocketTelemetry>>,
     connection_reused: bool,
 ) -> Result<(), ApiError> {
+    if ws_stream
+        .max_message_bytes
+        .is_some_and(|limit| request_text.len() > limit)
+    {
+        return Err(ApiError::WebsocketMessageTooLarge);
+    }
     let request_start = Instant::now();
-    let result = tokio::time::timeout(
-        idle_timeout,
-        ws_stream.send(Message::Text(request_text.into())),
-    )
-    .await
-    .map_err(|_| ApiError::Stream("idle timeout sending websocket request".into()))
-    .and_then(|result| result.map_err(map_ws_stream_error));
+    let result = tokio::time::timeout(idle_timeout, ws_stream.send(Message::Text(request_text)))
+        .await
+        .map_err(|_| ApiError::Stream("idle timeout sending websocket request".into()))
+        .and_then(|result| result.map_err(map_ws_stream_error));
 
     if let Some(t) = telemetry.as_ref() {
         t.on_ws_request(
@@ -1215,7 +1246,22 @@ mod tests {
 
     #[test]
     fn direct_serialization_preserves_websocket_request_payload() {
+        for (country_code, expected_country) in [
+            (None, None),
+            (Some(" de "), Some(json!("DE"))),
+            (Some("xX"), Some(Value::Null)),
+        ] {
+            assert_serialized_request(country_code, expected_country);
+        }
+    }
+
+    fn assert_serialized_request(country_code: Option<&str>, expected_country: Option<Value>) {
         let api_request = ResponsesApiRequest {
+            request_country: country_code
+                .map(codex_protocol::RequestCountry::from_iso_code)
+                .transpose()
+                .expect("country is valid")
+                .unwrap_or_default(),
             model: "gpt-test".to_string(),
             input: vec![ResponseItem::Message {
                 status: None,
@@ -1268,6 +1314,10 @@ mod tests {
 
         let mut expected_payload =
             serde_json::to_value(&api_request).expect("serialize responses API request");
+        assert_eq!(
+            expected_payload.get("request_country"),
+            expected_country.as_ref()
+        );
         expected_payload["type"] = json!("response.create");
         expected_payload["previous_response_id"] = json!("resp-1");
         expected_payload["generate"] = json!(false);
@@ -1279,6 +1329,10 @@ mod tests {
         let wire_payload =
             serde_json::from_str::<Value>(&request_text).expect("parse websocket request");
 
+        assert_eq!(
+            wire_payload.get("request_country"),
+            expected_country.as_ref()
+        );
         assert_eq!(wire_payload, expected_payload);
     }
 

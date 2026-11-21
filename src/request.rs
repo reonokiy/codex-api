@@ -295,6 +295,7 @@ impl CreateResponse {
             client_metadata: Some(HashMap::new()),
             access_programs: None,
             prompt_cache_options: None,
+            request_country: Default::default(),
         })
     }
 }

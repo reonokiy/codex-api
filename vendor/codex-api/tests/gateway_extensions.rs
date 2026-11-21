@@ -41,7 +41,7 @@ fn config() -> RealtimeSessionConfig {
         event_parser: RealtimeEventParser::V1,
         session_mode: RealtimeSessionMode::Conversational,
         output_modality: RealtimeOutputModality::Audio,
-        voice: RealtimeVoice::Cove,
+        voice: Some(RealtimeVoice::Cove),
     }
 }
 

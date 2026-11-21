@@ -438,6 +438,7 @@ async fn stream_preserves_full_events_and_uses_codex_request_and_headers() {
     assert_eq!(body["model"], h.model);
     assert_eq!(body["stream"], true);
     assert_eq!(body["store"], false);
+    assert!(body.get("request_country").is_none());
     assert_eq!(body["tool_choice"], "auto");
     assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
     assert_eq!(
@@ -1593,6 +1594,7 @@ async fn public_ws_accepts_sdk_input_and_builds_lite_request() {
     assert_eq!(body["reasoning"]["context"], "all_turns");
     assert_eq!(body["generate"], false);
     assert_eq!(body["stream_id"], "lane-1");
+    assert!(body.get("request_country").is_none());
     assert_eq!(
         body["client_metadata"]["ws_request_header_x_openai_internal_codex_responses_lite"],
         "true"
