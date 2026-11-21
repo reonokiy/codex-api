@@ -3,11 +3,11 @@ name = "codex-api-gateway"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-rust-version = "1.95"
+rust-version = "1.99.1"
 
 [dependencies]
-codex-context-fragments = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-websocket-client = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
+codex-context-fragments = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-websocket-client = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
 tokio-tungstenite = "0.28"
 zstd = "0.13"
 anyhow = "1"
@@ -31,22 +31,22 @@ opentelemetry = "0.31"
 opentelemetry_sdk = "0.31"
 opentelemetry-otlp = { version = "0.31", default-features = false, features = ["trace", "metrics", "logs", "http-proto", "reqwest-blocking-client", "reqwest-rustls"] }
 uuid = { version = "1", features = ["v4", "v5"] }
-codex-api = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-client = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-http-client = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-login = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-model-provider = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-model-provider-info = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-models-manager = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-protocol = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
-codex-config = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
+codex-api = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-client = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-http-client = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-login = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-model-provider = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-model-provider-info = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-models-manager = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-protocol = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
+codex-config = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
 
 
-codex-features = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
+codex-features = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
 
-codex-tools = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
+codex-tools = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
 
-codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "d32063f96c2dff1dc96af839b3952abb6acfeda4" }
+codex-exec-server = { git = "https://github.com/openai/codex.git", rev = "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e" }
 
 [dev-dependencies]
 opentelemetry_sdk = { version = "0.31", features = ["testing"] }
@@ -58,7 +58,7 @@ tempfile = "3"
 # Match upstream SQLx SQLite compatibility patches.
 sqlx-core = { git = "https://github.com/transact-rs/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
 sqlx-sqlite = { git = "https://github.com/transact-rs/sqlx", rev = "10462fa4414c6c7f1ed1d39bb31678e3b726878c" }
-crossterm = { git = "https://github.com/openai-oss-forks/crossterm", rev = "ed1cdab335221515706178d68495bba2aed1924f" }
+crossterm = { git = "https://github.com/openai-oss-forks/crossterm", rev = "37ca4a27a9424ec5dbe6451f48c339d7b45f8d63" }
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "7447c427513cfe685f236e1ac0513c4ea3dd9c0b" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "bc589d684755a8c02da0fc7e58d0861cbfc306f1" }
 

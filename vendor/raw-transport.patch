@@ -124,7 +124,7 @@
      pub async fn connect(
          &self,
          config: RealtimeSessionConfig,
-@@ -1090,17 +1125,83 @@
+@@ -1090,17 +1125,84 @@
          session_initialization: RealtimeSessionInitialization,
          transcript_state: RealtimeTranscriptState,
      ) -> Result<RealtimeWebsocketConnection, ApiError> {
@@ -161,6 +161,7 @@
 +            RealtimeSessionInitialization::ExistingCall => false,
 +        };
 +        if initialize_session {
++            let voice = config.voice_or_default();
 +            debug!(
 +                session_id = config.session_id.as_deref().unwrap_or("<none>"),
 +                "realtime websocket sending session.update"
@@ -172,7 +173,7 @@
 +                    config.initial_items,
 +                    config.session_mode,
 +                    config.output_modality,
-+                    config.voice,
++                    voice,
 +                    config.delegation_ack_filler,
 +                )
 +                .await?;
@@ -213,7 +214,7 @@
          request.headers_mut().extend(headers);
          if let Some(auth) = &self.auth {
              let headers = std::mem::take(request.headers_mut());
-@@ -1132,52 +1233,30 @@
+@@ -1132,53 +1234,30 @@
          let (stream, response) = connector
              .connect(request, websocket_config())
              .await
@@ -256,6 +257,7 @@
 -            RealtimeSessionInitialization::ExistingCall => false,
 -        };
 -        if initialize_session {
+-            let voice = config.voice_or_default();
 -            debug!(
 -                session_id = config.session_id.as_deref().unwrap_or("<none>"),
 -                "realtime websocket sending session.update"
@@ -267,7 +269,7 @@
 -                    config.initial_items,
 -                    config.session_mode,
 -                    config.output_modality,
--                    config.voice,
+-                    voice,
 -                    config.delegation_ack_filler,
 -                )
 -                .await?;
@@ -296,7 +298,7 @@
  pub use methods::RealtimeWebsocketConnection;
 --- a/src/endpoint/responses.rs
 +++ b/src/endpoint/responses.rs
-@@ -120,6 +120,20 @@
+@@ -132,6 +132,20 @@
              .await
      }
  
@@ -319,7 +321,7 @@
          body: EncodedJsonBody,
 --- a/src/endpoint/responses_websocket.rs
 +++ b/src/endpoint/responses_websocket.rs
-@@ -484,6 +484,52 @@
+@@ -502,6 +502,52 @@
          .await
      }
  
@@ -372,7 +374,7 @@
      /// Opens a WebSocket connection long enough to validate the upgrade response.
      ///
      /// The probe uses the same URL construction, headers, authentication, TLS,
-@@ -668,6 +714,35 @@
+@@ -691,6 +737,35 @@
          reasoning_included,
          server_model,
      ))
@@ -410,7 +412,7 @@
  fn websocket_config() -> WebSocketConfig {
 --- a/src/lib.rs
 +++ b/src/lib.rs
-@@ -61,11 +61,13 @@
+@@ -63,11 +63,13 @@
  pub use crate::endpoint::ImagesClient;
  pub use crate::endpoint::MemoriesClient;
  pub use crate::endpoint::ModelsClient;
@@ -424,7 +426,7 @@
  pub use crate::endpoint::RealtimeSessionConfig;
  pub use crate::endpoint::RealtimeSessionMode;
  pub use crate::endpoint::RealtimeTranscriptState;
-@@ -86,6 +88,7 @@
+@@ -88,6 +90,7 @@
  pub use crate::error::ApiError;
  pub use crate::files::HostedFileUploadContext;
  pub use crate::files::OPENAI_FILE_UPLOAD_LIMIT_BYTES;
