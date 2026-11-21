@@ -34,6 +34,7 @@ use tokio::sync::Semaphore;
 struct Fake {
     received: Arc<Mutex<Vec<(HeaderMap, Value)>>>,
     events: Vec<Value>,
+    http_event_gate: Arc<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>>,
     status: StatusCode,
     hang: bool,
     ws_frames: Arc<Mutex<Vec<String>>>,
@@ -101,7 +102,9 @@ async fn upstream(State(fake): State<Fake>, headers: HeaderMap, bytes: Bytes) ->
         .chunks(7)
         .map(Bytes::copy_from_slice)
         .collect();
+    let gate = fake.http_event_gate.lock().unwrap().take();
     let stream = async_stream::stream! {
+        if let Some(gate) = gate { let _ = gate.await; }
         for chunk in chunks { yield Ok::<_, std::io::Error>(chunk); }
         if fake.hang { std::future::pending::<()>().await; }
     };
@@ -256,6 +259,7 @@ impl Harness {
         let fake = Fake {
             received: Default::default(),
             events,
+            http_event_gate: Default::default(),
             status,
             hang,
             ws_frames: Default::default(),
@@ -332,6 +336,7 @@ impl Harness {
             ),
             auth,
             factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            api_transport: Default::default(),
             chatgpt_base_url: upstream_url.clone(),
             platform_base_url: upstream_url.clone(),
             auth_base_url: upstream_url.clone(),

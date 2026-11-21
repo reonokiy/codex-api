@@ -23,6 +23,7 @@ async fn backend(app: Router) -> (Backend, tokio::task::JoinHandle<()>) {
             ),
             auth,
             factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            api_transport: Default::default(),
             chatgpt_base_url: url.clone(),
             platform_base_url: url.clone(),
             auth_base_url: url,

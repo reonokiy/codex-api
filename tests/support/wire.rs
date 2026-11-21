@@ -53,6 +53,9 @@ impl Capture {
             task,
         }
     }
+    pub fn connection_count(&self) -> usize {
+        self.connections.lock().unwrap().len()
+    }
     pub fn save(&self, name: &str) -> std::path::PathBuf {
         let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("artifacts/protocol")
