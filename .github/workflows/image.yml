@@ -45,7 +45,16 @@ jobs:
       - name: Audit pinned upstream source
         run: cargo test --locked --test source_audit -- --ignored
   image:
-    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
@@ -61,7 +70,7 @@ jobs:
         id: cargo-cache
         with:
           path: ${{ runner.temp }}/cargo-buildkit-cache
-          key: ${{ runner.os }}-cargo-buildkit-v2-${{ hashFiles('Dockerfile', '**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-buildkit-v2-${{ hashFiles('Dockerfile', '**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
       # The gha layer cache does not persist RUN cache mounts between runners.
       - name: Restore container Cargo cache mounts
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
@@ -85,14 +94,14 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           load: true
           tags: codex-api:test
           labels: ${{ steps.meta.outputs.labels }}
           # Execute Cargo on cache misses so cached image layers cannot leave the mounts empty.
           no-cache-filters: ${{ steps.cargo-cache.outputs.cache-hit != 'true' && 'build' || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Smoke test
         run: cargo run --locked -p xtask -- smoke-container codex-api:test
   publish:
@@ -107,6 +116,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Free build space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+      - uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Load image for publication
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -116,7 +126,7 @@ jobs:
           load: true
           tags: codex-api:test
           labels: ${{ needs.image.outputs.labels }}
-          cache-from: type=gha
+          cache-from: type=gha,scope=amd64
       - name: Smoke test
         run: cargo run --locked -p xtask -- smoke-container codex-api:test
       - name: Log in to GHCR
@@ -130,15 +140,17 @@ jobs:
         id: publish
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ needs.image.outputs.tags }}
           labels: ${{ needs.image.outputs.labels }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha
+          cache-from: |
+            type=gha,scope=amd64
+            type=gha,scope=arm64
       - name: Image summary
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           DIGEST: ${{ steps.publish.outputs.digest }}
-        run: echo "Published \`$IMAGE@$DIGEST\` (linux/amd64)" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "Published \`$IMAGE@$DIGEST\` (linux/amd64, linux/arm64)" >> "$GITHUB_STEP_SUMMARY"
